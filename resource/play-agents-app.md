@@ -12,7 +12,7 @@
 - 在 ~/.claude/settings.json文件配置 Claude code使用什么模型等各种全局配置，~/.claude.json为 agent 自己自动配置的一些项目配置会不断更新，一般不用你维护
 - 在 ~/.openclaw/openclaw.json中配置模型/插件/通信组件等各种全局配置，你只用管这个文件就可以了
 - 记录一些 Claude code 使用的命令，/plugin 插件管理，/config各种配置模型等管理，/model glm-5切换到 glm-5模型，/compact 手动压缩上下文，一般是自动的不用管，/clear清除历史对话上下文
-- 记录一些 Openclaw 使用的命令，终端输入 openclaw gateway restart重启网关因为时不时不稳定，openclaw doctor --fix自动修复问题，openclaw tui终端交互
+- 记录一些 Openclaw 使用的命令，终端输入 openclaw config设置，终端输入 openclaw gateway restart重启网关因为时不时不稳定，openclaw doctor --fix自动修复问题，openclaw tui终端交互
 
 #### Skills使用技巧
 - to-do
