@@ -55,7 +55,183 @@ SequenceClassifierOutput(loss=None, logits=tensor([[-1.5607,  1.6123],
 
 #### 3.微调一个预训练模型
 - 如何使用自己的数据集微调预训练模型呢？从模型中心（hub）加载大型数据集；使用高级 Trainer API 微调一个模型；自定义训练过程；利用 Accelerate 库在所有分布式设备上轻松运行自定义训练过程；
-- 
+
+1. 从模型中心加载数据集
+```Python
+from datasets import load_dataset
+from transformers import AutoTokenizer
+
+raw_datasets = load_dataset("glue", "mrpc")
+print(raw_datasets)
+
+print(raw_datasets["train"][15])
+print(raw_datasets["validation"][87])
+
+#结果
+DatasetDict({
+    train: Dataset({
+        features: ['sentence1', 'sentence2', 'label', 'idx'],
+        num_rows: 3668
+    })
+    validation: Dataset({
+        features: ['sentence1', 'sentence2', 'label', 'idx'],
+        num_rows: 408
+    })
+    test: Dataset({
+        features: ['sentence1', 'sentence2', 'label', 'idx'],
+        num_rows: 1725
+    })
+})
+{'sentence1': 'Rudder was most recently senior vice president for the Developer & Platform Evangelism Business .', 'sentence2': 'Senior Vice President Eric Rudder , formerly head of the Developer and Platform Evangelism unit , will lead the new entity .', 'label': 0, 'idx': 16}
+{'sentence1': 'However , EPA officials would not confirm the 20 percent figure .', 'sentence2': 'Only in the past few weeks have officials settled on the 20 percent figure .', 'label': 0, 'idx': 812}
+
+```
+
+2. 预处理数据集 + 动态填充
+- 预处理数据集的作用是，将数据集提前处理好，生成数字（模型只能读懂数字）保存到内存中（增量文件关联到原数据集文件）
+- 动态填充，预处理之后的数据集一批一批加载到内存的同时进行动态填充，以此来保证每批数据的长度统一（模型的要求），同时可以只填充该批的最长长度，比较省空间
+
+
+```Python
+from datasets import load_dataset
+from transformers import AutoTokenizer
+
+# 加载的映射（索引），数据不进内存
+raw_datasets = load_dataset("glue", "mrpc")
+print(raw_datasets)
+
+checkpoint = "bert-base-uncased"
+tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+# 输入句子数据进行分词，生成模型可以读懂的数字数据
+ids1 = tokenizer("This is the first sentence.", "This is the second one.")
+print(ids1)
+# 把数字转换回分词文字
+t1 = tokenizer.convert_ids_to_tokens(ids1["input_ids"])
+# 多句话都在同一个 input_ids列表中了，token_type_ids的值用来区分每一句话（有些模型有token_type_ids，取决于模型预训练时是否用过）
+print(t1)
+
+
+# 预处理训练数据集
+
+# 首先raw_datasets = load_dataset("glue", "mrpc")方式下载的数据集会保存在本地磁盘，以 Apache Arrow 格式
+# 以这种方式将磁盘中的数据集所有数据加载到内存中，可能内存会不够用
+# tokenized_dataset = tokenizer(raw_datasets["train"]["sentence1"], raw_datasets["train"]["sentence2"], padding=True, truncation=True)
+
+def tokenize_function(example):
+    # 之前直接 tokenizer(raw_datasets["train"]["sentence1"]) 报错，是因为 Arrow 类型不被识别。
+    # 而 .map() 方法内部会自动处理类型转换，把 Arrow 数据转成 Python 原生类型再传给你的函数，所以 example["sentence1"] 实际上已经是 list[str]，tokenizer 可以正常处理。
+    return tokenizer(example["sentence1"], example["sentence2"], truncation=True)
+
+
+# 将数据集分成多个 batch（默认每批 1000条），对每个 batch 调用tokenize_function，将返回的 tokenization 结果合并到原始数据集中得到新的数据集
+tokenized_datasets = raw_datasets.map(tokenize_function, batched=True)
+print(tokenized_datasets)
+print(tokenized_datasets.cache_files)
+
+# 动态填充
+# 因为每个句子长度不同，需要填充到统一长度，该工具会在一个 batch 内找到最长的那条，把其他短的补 0（padding token）到相同长度，这样比预先固定长度更省内存
+from transformers import DataCollatorWithPadding
+data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
+
+# 取预处理后的数据集的前 8 行数据，并去除idx,sentence1,sentence2键
+samples = tokenized_datasets["train"][:8]
+samples = {k: v for k, v in samples.items() if k not in ["idx", "sentence1", "sentence2"]}
+# 结果如下[50, 59, 47, 67, 59, 50, 62, 32]，长度不统一
+print([len(x) for x in samples["input_ids"]])
+# 进行动态填充，长度统一了{'input_ids': torch.Size([8, 67]), 'token_type_ids': torch.Size([8, 67]), 'attention_mask': torch.Size([8, 67]), 'labels': torch.Size([8])}
+batch2 = data_collator(samples)
+print({k: v.shape for k, v in batch2.items()})
+
+
+```
+
+3. 使用 Trainer API 或者 Keras 微调一个模型
+- transformers 库提供了 Trainer 类，可以帮助你在数据集上微调任何预训练模型
+```Python
+from datasets import load_dataset
+from transformers import AutoTokenizer, DataCollatorWithPadding
+
+# 加载数据集
+raw_datasets = load_dataset("glue", "mrpc")
+checkpoint = "bert-base-uncased"
+# 加载指定模型的分词器
+tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+
+
+# 数据集预处理
+def tokenize_function(example):
+    return tokenizer(example["sentence1"], example["sentence2"], truncation=True)
+
+
+tokenized_datasets = raw_datasets.map(tokenize_function, batched=True)
+# 数据batch动态填充工具
+data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
+
+from transformers import TrainingArguments
+
+# 专门用来设置训练参数的工具类，创建一个训练参数配置对象，参数“test-trainer”是输出目录的名字，也即模型保存的位置
+# training_args = TrainingArguments("test-trainer", num_train_epochs=1, learning_rate=5e-4, per_device_train_batch_size=4)
+from transformers import AutoModelForSequenceClassification
+
+# num_labels=2
+# model = AutoModelForSequenceClassification.from_pretrained(checkpoint, num_labels=2)
+
+from transformers import Trainer
+
+# 训练
+# trainer = Trainer(model,
+#                   training_args,
+#                   train_dataset=tokenized_datasets["train"],
+#                   eval_dataset=tokenized_datasets["validation"],
+#                   data_collator=data_collator,
+#                   processing_class=tokenizer)
+# trainer.train()
+
+# 评估
+
+# 使用数据集中的验证集对模型进行评估
+# predictions = trainer.predict(tokenized_datasets["validation"])
+# print(predictions.predictions.shape, predictions.label_ids.shape)
+
+# 将模型输出的 logits 逻辑值浮点数转化为可以与标签进行比较的预测值，返回数组中最大值所在的索引，`axis=-1`沿最后一个维度（即类别维度）寻找最大值
+import numpy as np
+
+# preds = np.argmax(predictions.predictions, axis=-1)
+# 将上一步生成的预测值和真实标签值进行对比计算准确率和 F1
+import evaluate
+
+
+# metric = evaluate.load("glue", "mrpc")
+# metric.compute(predictions=preds, references=predictions.label_ids)
+
+# 总结上述评估步骤，给出总的评估配置
+def compute_metrics(eval_preds):
+    metric = evaluate.load("glue", "mrpc")
+    logits, labels = eval_preds
+    predictions = np.argmax(logits, axis=-1)
+    return metric.compute(predictions=predictions, references=labels)
+
+
+training_args = TrainingArguments("test-trainer", eval_strategy="epoch")
+model = AutoModelForSequenceClassification.from_pretrained(checkpoint, num_labels=2)
+
+trainer = Trainer(model,
+                  training_args,
+                  train_dataset=tokenized_datasets["train"],
+                  eval_dataset=tokenized_datasets["validation"],
+                  data_collator=data_collator,
+                  processing_class=tokenizer,
+                  compute_metrics=compute_metrics, )
+trainer.train()
+
+```
+
+4. 一个完整的训练过程
+- 在不使用transformers库 Trainer 类的情况下实现一样的训练步骤和效果
+
+```Python
+# todo
+```
 
 #### 4.分享你的模型和标记器
 
