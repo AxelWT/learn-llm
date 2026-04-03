@@ -676,6 +676,42 @@ model = AutoModelForMaskedLM.from_pretrained("camembert-base")
 ```
 
 - 分享预训练的模型
+- huggingface客户端方式推送到 hub 仓库
+```bash
 
+# Install the Hugging Face CLI
+brew install hf
+
+# (optional) Login with your Hugging Face credentials
+hf auth login
+
+# Push your model files
+hf upload <your-account>/<your repository name> . 
+```
+
+- python代码方式推送
+```Python
+from huggingface_hub import login, upload_folder
+
+# (optional) Login with your Hugging Face credentials
+login('<token-with-write-access>')
+
+# Push your model files
+upload_folder(folder_path=".", repo_id="<your-account>/<your repository name>", repo_type="model")
+
+```
+
+- git 方式推送
+```bash
+# Make sure git-xet is installed (https://hf.co/docs/hub/git-xet)
+git xet install
+
+git clone https://huggingface.co/<your-account>/<your repository name>
+
+# You'll be prompted for your HF credentials
+git push
+
+```
 
 - 构建模型卡片
+- hub网页端进行编辑
