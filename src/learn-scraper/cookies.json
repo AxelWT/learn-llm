@@ -1,0 +1,8 @@
+[
+  {
+    "name": "Cookie",
+    "value": "cookie value, copy from browser",
+    "domain": "example.com",
+    "path": "/"
+  }
+]
