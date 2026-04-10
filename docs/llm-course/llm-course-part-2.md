@@ -297,7 +297,10 @@ print(drug_dataset_reloaded_jsonl)
 - 参考文件 datasets_large_data_principles.md 来了解 Datasets 实现大数据轻松访问的原理和具体操作代码
 
 - **创建自己的数据集**
+- 参考 ./src/llm-course/5-fetch-issues-*.py脚本
 
+- **使用 FAISS 进行语义搜索**
+- - 参考 ./src/llm-course/embedding-then-faiss-search.py脚本
 
 #### 6.TOKENIZERS 库
 
