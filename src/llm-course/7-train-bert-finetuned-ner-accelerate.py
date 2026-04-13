@@ -290,15 +290,15 @@ for epoch in range(num_train_epochs):
         },
     )
 
-    # 保存并上传
+    # 保存
     accelerator.wait_for_everyone()
     unwrapped_model = accelerator.unwrap_model(model)
     unwrapped_model.save_pretrained(output_dir, save_function=accelerator.save)
     if accelerator.is_main_process:
         tokenizer.save_pretrained(output_dir)
-        unwrapped_model.push_to_hub(
-            repo_name, commit_message=f"Training in progress epoch {epoch}"
-        )
+        # unwrapped_model.push_to_hub(
+        #     repo_name, commit_message=f"Training in progress epoch {epoch}"
+        # )
 
 # ==================== 第十部分：训练完成保存和上传 ====================
 # 等待所有进程完成训练

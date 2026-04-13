@@ -3,14 +3,15 @@
 #### 总结
 
 #### 5.DATASETS 库
+
 - **如果我的数据集不在 hub 上怎么办？ 用datasets工具进行加载，比较简单**
 - 支持几种常见的数据格式
 
-| 类型参数 | 加载的指令 |
-|-----------|------------|
-| CSV & TSV | `load_dataset("csv", data_files="my_file.csv")` |
-| Text files | `load_dataset("text", data_files="my_file.txt")` |
-| JSON & JSON Lines | `load_dataset("json", data_files="my_file.jsonl")` |
+| 类型参数               | 加载的指令                                                   |
+|--------------------|---------------------------------------------------------|
+| CSV & TSV          | `load_dataset("csv", data_files="my_file.csv")`         |
+| Text files         | `load_dataset("text", data_files="my_file.txt")`        |
+| JSON & JSON Lines  | `load_dataset("json", data_files="my_file.jsonl")`      |
 | Pickled DataFrames | `load_dataset("pandas", data_files="my_dataframe.pkl")` |
 
 ```Python
@@ -46,7 +47,10 @@ data_files = {
 squad_it_dataset = load_dataset("json", data_files=data_files, field="data")
 ```
 
+---
+
 - **是时候来学一下切片了**
+
 ```Python
 from datasets import load_dataset
 from pandas.tseries import frequencies
@@ -241,7 +245,6 @@ data_files_jsonl = {
 drug_dataset_reloaded_jsonl = load_dataset("json", data_files=data_files_jsonl)
 print(drug_dataset_reloaded_jsonl)
 
-
 # 附注
 # 当你使用切片[:3]
 # 时，Dataset
@@ -293,16 +296,26 @@ print(drug_dataset_reloaded_jsonl)
 
 ```
 
+---
+
 - **大数据？Datasets 来救援！**
 - 参考文件 datasets_large_data_principles.md 来了解 Datasets 实现大数据轻松访问的原理和具体操作代码
+
+---
 
 - **创建自己的数据集**
 - 参考 ./src/llm-course/5-fetch-issues-*.py脚本
 
+---
+
 - **使用 FAISS 进行语义搜索**
-- - 参考 ./src/llm-course/embedding-then-faiss-search.py脚本
+-
+    - 参考 ./src/llm-course/embedding-then-faiss-search.py脚本
+
+---
 
 #### 6.TOKENIZERS 库
+
 - **当我们需要微调模型时，我们需要使用与模型预训练相同的tokenizer**
 - 但是当我们想从头开始训练模型时应该选用哪个 tokenizer？使用来自其他领域或语言的语料库上预训练的 tokenizer 通常是不理想的
 - 本章讲述如何在一份文本语料库上训练一个全新的 tokenizer，然后将使用它来预训练语言模型
@@ -312,10 +325,14 @@ print(drug_dataset_reloaded_jsonl)
 - 训练 tokenizer 是一个统计过程，它试图确定哪些子词最适合为给定的语料库选择，确定的过程取决于分词算法。
 - 它是确定性的，这意味着在相同的语料库上使用相同的算法进行训练时，得到的结果总是相同的。
 
-#### 7.主要的 NLP 任务
+---
+
+#### 7.主要的 NLP 任
+
 - **标记（token）分类**
 - 这个通用任务涵盖了所有可以表述为“给句子中的词或字贴上标签”的问题
-- 例如：实体命名识别（NER）找出句子中的实体（如人物，地点或组织），词性标注（POS）将句子中每个单词标记为对应于特定的词性（名词动词等），分块（chunking）找出属于同一实体的 tokens 这个任务
+- 例如：实体命名识别（NER）找出句子中的实体（如人物，地点或组织），词性标注（POS）将句子中每个单词标记为对应于特定的词性（名词动词等），分块（chunking）找出属于同一实体的
+  tokens 这个任务
 
 ```Python
 """
@@ -1443,6 +1460,70 @@ if accelerator.is_main_process:
 
 ```
 
+---
+
+- **微调一个掩码（mask）语言模型**
+- 对于许多涉及 Transformer 模型的 NLP 任务，你可以简单地从 HuggingFace Hub 中获取一个预训练的模型，然后直接在你的数据上对其进行微调，以完成手头的任务
+- 只要用于预训练的语料库与用于微调的语料库**没有太大区别**，迁移学习通常会产生很好的结果
+
+- 关键概念解释
+
+1. 🤖 预训练模型与微调（Pre-training & Fine-tuning）
+
+想象你在学习英语：
+
+- **预训练** = 先学习大量通用英语（语法、词汇、阅读理解）
+- **微调** = 再专门学习"法律英语"或"医学英语"
+
+Hugging Face Hub 就像一个"模型超市"，里面有很多已经学过大量通用知识的模型，你可以直接拿来，在自己的数据上继续训练。
+
+2. 🔁 迁移学习（Transfer Learning）
+
+**核心思想**：把在A任务上学到的知识，迁移到B任务上使用。
+
+> **举例**：一个学过大量中文新闻的模型，去做中文情感分析，比从零开始训练效果好得多——因为它已经"懂中文"了。
+
+**前提**：预训练数据和微调数据不能差异太大。比如用英语新闻预训练的模型，去处理中文法律文书，效果就会很差。
+
+3. ⚠️ 领域特定词汇的问题
+
+BERT 等通用模型是在普通文本（如维基百科）上训练的。遇到专业领域词汇时：
+
+| 领域 | 特殊词汇举例        | 通用模型的问题     |
+|----|---------------|-------------|
+| 法律 | "要约承诺"、"不当得利" | 当成罕见词，不理解含义 |
+| 医学 | "心肌梗塞"、"淋巴细胞" | 拆成零散字符处理    |
+| 金融 | "回购协议"、"对冲敞口" | 无法捕捉专业语义    |
+
+4. 🎯 领域适应（Domain Adaptation）
+
+**解决方案**：在使用模型做具体任务之前，先用**领域内数据**再训练一遍语言模型本身。
+
+```
+ 通用预训练模型
+      ↓
+  领域适应（用领域数据继续训练）
+      ↓
+  领域专用语言模型
+      ↓
+  微调具体任务（分类、问答等）
+```
+
+**好处**：只需做一次领域适应，之后该领域内的**所有下游任务**都能受益。
+
+5. 📜 ULMFiT 的历史意义
+
+2018 年，ULMFiT（基于 LSTM）首次证明了这套"预训练→领域适应→任务微调"的流程是有效的，开创了 NLP 迁移学习的先河。现在我们用更强大的
+**Transformer**（如 BERT、GPT）做同样的事，效果更好。
+
+**一句话总结**：如果你的数据很专业（法律、医学等），不要直接用通用模型做任务——先用你的专业数据"教会"模型领域知识，再去做具体任务，效果会好很多。
+
+---
+
 #### 8.如何寻求帮助
 
+---
+
 #### 9.构建并分享你的模型
+
+---
