@@ -305,3 +305,15 @@ print(f"train ends:{datetime.now()}")
 
 trainer.save_model()
 trainer.push_to_hub(commit_message="training completed")
+print("push model to hub success")
+
+# 使用模型，可以使用远程 hub 的（要拉下来，比较慢），也可以使用本地的
+from transformers import pipeline
+from rich import print
+
+# 使用本地保存的模型（训练完成后的最终模型）
+# 如果想使用某个 checkpoint，可以改为 "./bert-finetuned-ner/checkpoint-5268"
+token_classifier = pipeline("token-classification", model="./bert-finetuned-ner", aggregation_strategy="simple")
+
+res = token_classifier("My name is Sylvain and I work at Hugging Face in Brooklyn.")
+print(res)
