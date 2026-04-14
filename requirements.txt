@@ -1,0 +1,100 @@
+# Learn-LLM 项目依赖
+# ====================
+# 安装命令: pip install -r requirements.txt
+
+# ============================================
+# 一、LLM课程模块 (src/llm-course/)
+# ============================================
+
+# HuggingFace 核心库
+transformers>=4.40.0              # Transformer模型和Tokenizer
+datasets>=2.18.0                  # 数据集加载和处理
+evaluate>=0.4.0                   # 评估指标（seqeval等）
+accelerate>=0.28.0                # 分布式训练加速
+huggingface_hub>=0.23.0           # 模型上传到Hub
+
+# PyTorch深度学习框架
+torch>=2.2.0                      # 深度学习框架（根据系统选择cpu/cuda版本）
+# torch torchvision torchaudio    # 可选：完整PyTorch套件
+
+# 数据处理和工具
+numpy>=1.26.0                     # 数值计算
+pandas>=2.2.0                     # 数据分析和处理
+tqdm>=4.66.0                      # 进度条显示
+
+# 向量搜索（可选）
+faiss-cpu>=1.7.4                  # FAISS向量搜索（CPU版本）
+# faiss-gpu                       # 可选：GPU版本（需要CUDA）
+
+# 异步HTTP请求（用于GitHub数据采集）
+aiohttp>=3.9.0                    # 异步HTTP客户端
+aiofiles>=23.2.0                  # 异步文件操作
+
+# ============================================
+# 二、Agent课程模块 (src/learn-claude-code/)
+# ============================================
+
+anthropic>=0.27.0                 # Anthropic Claude SDK
+
+# ============================================
+# 三、爬虫模块 (src/learn-scraper/)
+# ============================================
+
+requests>=2.31.0                  # HTTP请求库
+beautifulsoup4>=4.12.0            # HTML解析
+lxml>=5.1.0                       # 高性能XML/HTML解析器（BeautifulSoup可选）
+playwright>=1.42.0                # 动态页面渲染和自动化
+
+# ============================================
+# 四、通用工具（所有模块共用）
+# ============================================
+
+python-dotenv>=1.0.0              # 环境变量管理
+pydantic>=2.6.0                   # 数据验证和设置管理（知识库相关）
+
+# ============================================
+# 五、可选依赖（按需安装）
+# ============================================
+
+# 系统监控（知识库相关）
+psutil>=5.9.0                     # 系统和进程监控
+
+# Jupyter支持（可选，用于交互式学习）
+jupyter>=1.0.0                    # Jupyter notebook
+ipykernel>=6.29.0                 # IPython kernel
+
+# 代码质量工具（可选，用于开发）
+black>=24.0.0                     # 代码格式化
+isort>=5.13.0                     # import排序
+flake8>=7.0.0                     # 代码检查
+
+# ============================================
+# 安装说明
+# ============================================
+
+# 最小安装（仅LLM课程）:
+#   pip install transformers datasets evaluate torch tqdm numpy python-dotenv
+#
+# Agent课程安装:
+#   pip install anthropic python-dotenv
+#
+# 爬虫模块安装:
+#   pip install requests beautifulsoup4 playwright
+#   playwright install chromium    # 安装浏览器驱动
+
+# ============================================
+# GPU支持说明
+# ============================================
+
+# 如需GPU训练支持，请安装CUDA版本的PyTorch:
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# FAISS GPU版本:
+# pip install faiss-gpu
+
+# ============================================
+# 版本兼容性
+# ============================================
+
+# Python版本要求: >=3.10
+# 建议使用Python 3.10-3.12
