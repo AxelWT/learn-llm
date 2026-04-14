@@ -315,13 +315,13 @@ cp .env.example .env
 
 ```bash
 # LLM课程 - NER任务微调
-python src/llm-course/7-train-bert-finetuned-ner.py
+python src/llm-course/s07_train_bert_finetuned_ner.py
 
 # Agent课程 - Agent循环基础
 python src/learn-claude-code/agents/s01_agent_loop.py
 
 # 爬虫 - 智能爬虫
-python src/learn-scraper/smart-page-scraper.py
+python src/learn-scraper/smart_page_scraper.py
 ```
 
 ---

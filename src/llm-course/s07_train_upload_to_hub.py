@@ -4,10 +4,10 @@
 用途：当训练脚本的网络上传失败时，可使用此脚本单独上传已保存的本地模型
 
 使用方法：
-    python 7-train-upload-to-hub.py
+    python s07_train_upload_to_hub.py
 
 或指定参数：
-    python 7-train-upload-to-hub.py --model-dir bert-finetuned-ner --repo-name your-username/bert-finetuned-ner
+    python s07_train_upload_to_hub.py --model-dir bert-finetuned-ner --repo-name your-username/bert-finetuned-ner
 """
 
 import argparse
