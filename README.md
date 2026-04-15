@@ -237,16 +237,16 @@ Python技术栈相关知识点汇总，包含实用工具和技术笔记。
 
 ### 内容列表
 
-| 文档 | 主题 | 内容 |
-|------|------|------|
-| [python-syntax-notes.md](docs/knowledge-base/python-syntax-notes.md) | Python语法 | 特殊语法、常用技巧 |
-| [pydantic使用指南.md](docs/knowledge-base/pydantic使用指南.md) | Pydantic | 数据验证、模型定义 |
-| [asyncio事件循环机制总结.md](docs/knowledge-base/asyncio事件循环机制总结.md) | Asyncio | 异步编程、事件循环 |
-| [git-worktree-guide.md](docs/knowledge-base/git-worktree-guide.md) | Git Worktree | 多分支并行工作 |
-| [tmux-guide.md](docs/knowledge-base/tmux-guide.md) | Tmux | 终端复用、会话管理 |
-| [psutil-系统监控.md](docs/knowledge-base/psutil-系统监控.md) | Psutil | 系统监控、进程管理 |
-| [环境变量作用域与存储.md](docs/knowledge-base/环境变量作用域与存储.md) | 环境变量 | 配置管理 |
-| [scraper.md](docs/knowledge-base/scraper.md) | 爬虫技术 | 静态/动态/智能爬虫模板 |
+| 文档                                                                                                   | 主题 | 内容 |
+|------------------------------------------------------------------------------------------------------|------|------|
+| [python-syntax-notes.md](docs/knowledge-base/python-syntax-notes.md)                                 | Python语法 | 特殊语法、常用技巧 |
+| [pydantic-guide.md](docs/knowledge-base/pydantic-guide.md)                                           | Pydantic | 数据验证、模型定义 |
+| [asyncio-event-loop-guide.md](docs/knowledge-base/asyncio-event-loop-guide.md)                       | Asyncio | 异步编程、事件循环 |
+| [git-worktree-guide.md](docs/knowledge-base/git-worktree-guide.md)                                   | Git Worktree | 多分支并行工作 |
+| [tmux-guide.md](docs/knowledge-base/tmux-guide.md)                                                   | Tmux | 终端复用、会话管理 |
+| [psutil-system-monitor.md](docs/knowledge-base/psutil-system-monitor.md)                             | Psutil | 系统监控、进程管理 |
+| [environment-variables-scope-storage.md](docs/knowledge-base/environment-variables-scope-storage.md) | 环境变量 | 配置管理 |
+| [scraper-guide.md](docs/knowledge-base/scraper-guide.md)                                                  | 爬虫技术 | 静态/动态/智能爬虫模板 |
 
 ---
 
@@ -290,7 +290,7 @@ src/learn-scraper/
 
 ### 参考文档
 
-- [scraper.md](docs/knowledge-base/scraper.md) - 完整爬虫模板和使用说明
+- [scraper.md](docs/knowledge-base/scraper-guide.md) - 完整爬虫模板和使用说明
 
 ---
 
@@ -300,7 +300,7 @@ src/learn-scraper/
 
 ```bash
 # 克隆项目
-git clone https://github.com/shareAI-lab/learn-llm
+git clone https://github.com/AxelWT/learn-llm
 cd learn-llm
 
 # 安装依赖（各模块依赖不同，请查看对应requirements.txt）
