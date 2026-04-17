@@ -5,13 +5,15 @@
 支持代理配置，所有请求可通过指定代理服务器发送。
 
 用法：
-    python monitor_wrapper.py script.py
-    python monitor_wrapper.py script.py -f function_name
+    python monitor_wrapper.py script.py                     # 加载脚本，执行 main/execute
+    python monitor_wrapper.py script.py -e                  # 仅执行脚本顶层代码
+    python monitor_wrapper.py script.py -f function_name    # 执行指定函数
     python monitor_wrapper.py script.py -p http://127.0.0.1:7890
     python monitor_wrapper.py script.py -f func -p socks5://proxy:1080
 
 示例：
-    python monitor_wrapper.py download_script.py
+    python monitor_wrapper.py download_script.py            # 加载后执行 main/execute
+    python monitor_wrapper.py download_script.py -e         # 仅执行脚本顶层代码（不调用函数）
     python monitor_wrapper.py download_script.py -f download_example_files
     python monitor_wrapper.py download_script.py -p http://127.0.0.1:7890
     python monitor_wrapper.py my_script.py -f main -p socks5://user:pass@proxy:1080
@@ -222,15 +224,15 @@ def get_stats():
 #                    动态导入模块
 # ============================================================
 
-def load_script(script_path: str) -> object:
+def load_script(script_path: str) -> tuple:
     """
-    动态加载 Python 脚本为模块
+    动态加载 Python 脚本为模块（不执行代码）
 
     参数：
         script_path: 脚本文件路径
 
     返回：
-        加载的模块对象
+        (module, spec) 元组
     """
     # 获取脚本绝对路径
     abs_path = os.path.abspath(script_path)
@@ -248,10 +250,10 @@ def load_script(script_path: str) -> object:
     # 将模块添加到 sys.modules（支持模块内的相对导入）
     sys.modules[module_name] = module
 
-    # 执行模块代码
-    spec.loader.exec_module(module)
+    # 不在这里执行模块代码，由调用方决定何时执行
+    # spec.loader.exec_module(module)
 
-    return module
+    return module, spec
 
 
 def run_function(module, func_name: str, func_args: list = None):
@@ -294,8 +296,7 @@ def run_module_main(module):
     elif hasattr(module, 'execute') and callable(module.execute):
         module.execute()
     else:
-        print("提示: 未找到 main/execute 函数，模块已加载但未执行特定函数")
-        print("使用 -f 参数指定函数名，如: -f main")
+        print("提示: 未找到 main/execute 函数，顶层代码已执行完毕")
 
 
 # ============================================================
@@ -310,6 +311,7 @@ def main():
         epilog="""
 示例：
   python monitor_wrapper.py script.py                          # 加载脚本，执行 main/execute
+  python monitor_wrapper.py script.py -e                       # 仅执行脚本顶层代码（不调用函数）
   python monitor_wrapper.py script.py -f download              # 执行指定函数
   python monitor_wrapper.py script.py -p http://127.0.0.1:7890 # 使用 HTTP 代理
   python monitor_wrapper.py script.py -p socks5://proxy:1080   # 使用 SOCKS5 代理
@@ -324,6 +326,8 @@ def main():
     )
 
     parser.add_argument("script", help="目标脚本路径")
+    parser.add_argument("-e", "--execute", action="store_true",
+                        help="仅执行脚本顶层代码，不调用任何函数")
     parser.add_argument("-f", "--function", default=None,
                         help="要执行的函数名（默认执行 main 或 execute）")
     parser.add_argument("-a", "--args", nargs='*', default=None,
@@ -343,7 +347,7 @@ def main():
     # ===== 第3步：动态加载目标脚本 =====
     try:
         print(f"加载脚本: {args.script}")
-        module = load_script(args.script)
+        module, spec = load_script(args.script)
         print(f"模块已加载: {module.__name__}\n")
     except FileNotFoundError as e:
         print(f"✗ {e}")
@@ -356,7 +360,14 @@ def main():
 
     # ===== 第4步：执行目标函数 =====
     try:
-        if args.function:
+        # 先执行模块顶层代码（定义函数等）
+        print("开始执行模块顶层代码")
+        spec.loader.exec_module(module)
+
+        if args.execute:
+            # 仅执行脚本顶层代码（已完成，不调用任何函数）
+            print("仅执行脚本顶层代码（不调用任何函数）")
+        elif args.function:
             # 执行指定函数
             print(f"执行函数: {args.function}")
             if args.args:
