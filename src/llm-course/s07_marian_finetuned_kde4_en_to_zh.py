@@ -7,13 +7,14 @@
 import torch
 
 # 自动检测设备：M系列芯片 使用 MPS，否则使用 CPU
-device = "mps" if torch.backends.mps.is_available() else "cpu"
+# device = "mps" if torch.backends.mps.is_available() else "cpu"
+device = "cpu"
 print(f"Using device: {device}")
 
 from datasets import load_dataset
 
 # 加载 KDE4 英法平行语料库
-raw_datasets = load_dataset("kde4", lang1="en", lang2="fr")
+raw_datasets = load_dataset("kde4", lang1="en", lang2="zh_CN")
 print(raw_datasets)
 print(raw_datasets["train"][1000])
 
@@ -26,7 +27,7 @@ print(split_datasets)
 from transformers import AutoTokenizer
 
 # 使用预训练的 MarianMT 英法翻译模型
-model_checkpoint = "Helsinki-NLP/opus-mt-en-fr"
+model_checkpoint = "Helsinki-NLP/opus-mt-en-zh"
 tokenizer = AutoTokenizer.from_pretrained(model_checkpoint, return_tensors="pt")
 
 # 序列最大长度
@@ -39,7 +40,7 @@ def preprocess_function(examples):
     输入：英文句子，目标：法文句子
     """
     inputs = [ex["en"] for ex in examples["translation"]]
-    targets = [ex["fr"] for ex in examples["translation"]]
+    targets = [ex["zh_CN"] for ex in examples["translation"]]
     model_input = tokenizer(
         inputs, text_target=targets, max_length=max_length, truncation=True
     )
@@ -153,7 +154,7 @@ from transformers import Seq2SeqTrainingArguments
 
 # 训练参数配置
 args = Seq2SeqTrainingArguments(
-    f"marian-finetuned-kde4-en-to-fr",  # 输出目录名称
+    f"marian-finetuned-kde4-en-to-zh",  # 输出目录名称
     eval_strategy="no",  # 不在训练过程中评估（节省时间）
     save_strategy="epoch",  # 每个 epoch 保存一次
     learning_rate=2e-5,  # 学习率
@@ -164,8 +165,8 @@ args = Seq2SeqTrainingArguments(
     num_train_epochs=3,  # 训练 3 个 epoch
     predict_with_generate=True,  # 评估时使用生成模式
     fp16=False,  # M1 chip 不支持 CUDA fp16
-    use_cpu=False,  # 自动使用 MPS 加速
-    push_to_hub=True,  # 训练完成后推送到 Hugging Face Hub
+    use_cpu=True,  # 强制使用 CPU
+    push_to_hub=True,  # 训练完成后推送到 Hugging Face
 )
 print(f"==============print training args:{args}================")
 

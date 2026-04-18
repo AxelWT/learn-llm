@@ -13,15 +13,16 @@
 import torch
 import numpy as np  # BUG修复：postprocess函数需要numpy进行标签处理
 
-# 自动检测设备：M系列芯片使用 MPS，否则使用 CPU
-device = "mps" if torch.backends.mps.is_available() else "cpu"
+# 自动检测设备：M系列芯片使用 MPS，否则使用 CPU （运行发现内存不够）
+# device = "mps" if torch.backends.mps.is_available() else "cpu"
+device = "cpu"
 print(f"Using device: {device}")
 
 from datasets import load_dataset
 
 # 加载 KDE4 英法平行语料库
 # KDE4 是 KDE 软件项目的本地化翻译数据集，包含大量英法平行句子
-raw_datasets = load_dataset("kde4", lang1="en", lang2="fr")
+raw_datasets = load_dataset("kde4", lang1="en", lang2="zh_CN")
 print(raw_datasets)
 # 打印一个样本查看数据格式
 print(raw_datasets["train"][1000])  # 示例：{'translation': {'en': '...', 'fr': '...'}}
@@ -36,7 +37,7 @@ from transformers import AutoTokenizer
 
 # 使用预训练的 MarianMT 英法翻译模型
 # MarianMT 是基于 Transformer 的序列到序列翻译模型
-model_checkpoint = "Helsinki-NLP/opus-mt-en-fr"
+model_checkpoint = "Helsinki-NLP/opus-mt-en-zh"
 # return_tensors="pt" 参数指定返回 PyTorch 张量格式
 tokenizer = AutoTokenizer.from_pretrained(model_checkpoint, return_tensors="pt")
 
@@ -50,7 +51,7 @@ def preprocess_function(examples):
     输入：英文句子，目标：法文句子
     """
     inputs = [ex["en"] for ex in examples["translation"]]
-    targets = [ex["fr"] for ex in examples["translation"]]
+    targets = [ex["zh_CN"] for ex in examples["translation"]]
     model_input = tokenizer(
         inputs, text_target=targets, max_length=max_length, truncation=True
     )
@@ -70,7 +71,10 @@ from transformers import AutoModelForSeq2SeqLM
 # 加载预训练的 Seq2Seq 模型并移动到 MPS/CPU 设备
 # BUG修复：结合 Accelerator 的 device_placement=False 设置，
 # 手动将模型放在正确设备上，避免 Accelerator 与 MPS 的冲突
-model = AutoModelForSeq2SeqLM.from_pretrained(model_checkpoint).to(device)
+model = AutoModelForSeq2SeqLM.from_pretrained(model_checkpoint)
+# 启用梯度检查点以减少内存使用（MPS设备内存有限）
+model.gradient_checkpointing_enable()
+model = model.to(device)
 
 from transformers import DataCollatorForSeq2Seq
 
@@ -84,7 +88,7 @@ train_dataloader = DataLoader(
     tokenized_datasets["train"],
     shuffle=True,
     collate_fn=data_collator,
-    batch_size=8,
+    batch_size=8,  # 进一步减小batch_size以避免MPS内存溢出
 )
 eval_dataloader = DataLoader(
     tokenized_datasets["validation"], collate_fn=data_collator, batch_size=8
@@ -104,14 +108,15 @@ if device == "mps":
     # Accelerator 主要用于分布式训练，单机 MPS 训练可以直接使用原生代码
     accelerator = Accelerator(device_placement=False)
     # 手动确保模型和数据在正确设备上
+    # MPS 与 Accelerate.prepare() 有兼容性问题，不使用 prepare() 自动迁移
+    # 模型已在 MPS 上，数据加载器保持原样，训练时手动迁移 batch
 else:
     # CPU 或 CUDA：使用 Accelerator 自动管理设备
     accelerator = Accelerator()
-
-# prepare() 会将模型和数据加载器移动到正确的设备，并设置分布式训练
-model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(
-    model, optimizer, train_dataloader, eval_dataloader
-)
+    # prepare() 会将模型和数据加载器移动到正确的设备，并设置分布式训练
+    model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(
+        model, optimizer, train_dataloader, eval_dataloader
+    )
 
 from transformers import get_scheduler
 
@@ -134,11 +139,11 @@ lr_scheduler = get_scheduler(
 from huggingface_hub import HfApi, get_full_repo_name, create_repo
 
 # 设置模型名称和 Hub 仓库
-model_name = "marian-finetuned-kde4-en-to-fr-accelerate"
+model_name = "marian-finetuned-kde4-en-to-zh-accelerate"
 repo_name = get_full_repo_name(model_name)
 print(f"================get repo:{repo_name}==============")
 
-output_dir = "marian-finetuned-kde4-en-to-fr-accelerate"
+output_dir = "marian-finetuned-kde4-en-to-zh-accelerate"
 
 # BUG修复：Repository 类已弃用，使用 HfApi 替代
 # HfApi 是新版 huggingface_hub 推荐的 API，提供更简洁的文件上传接口
@@ -199,6 +204,9 @@ for epoch in range(num_train_epochs):
     # 训练阶段
     model.train()
     for batch in train_dataloader:
+        # MPS 设备需要手动将 batch 移动到正确设备
+        if device == "mps":
+            batch = {k: v.to(device) for k, v in batch.items()}
         # 前向传播：计算模型输出
         outputs = model(**batch)
         loss = outputs.loss
@@ -215,6 +223,9 @@ for epoch in range(num_train_epochs):
     model.eval()
     # BUG修复：添加 tqdm 描述参数，让进度条更清晰
     for batch in tqdm(eval_dataloader, desc=f"Evaluation epoch {epoch}"):
+        # MPS 设备需要手动将 batch 移动到正确设备
+        if device == "mps":
+            batch = {k: v.to(device) for k, v in batch.items()}
         # 使用torch.no_grad()禁用梯度计算，节省内存
         with torch.no_grad():
             # 生成翻译结果（使用beam search或其他策略）
@@ -268,7 +279,7 @@ from transformers import pipeline
 # 使用训练好的模型进行翻译推理
 # 注意：这里使用的是预训练checkpoint作为示例，实际应使用本地训练的模型：
 # model_checkpoint = "marian-finetuned-kde4-en-to-fr-accelerate" 或 output_dir
-model_checkpoint = "huggingface-course/marian-finetuned-kde4-en-to-fr"
+model_checkpoint = "axelloo/marian-finetuned-kde4-en-to-zh"
 translator = pipeline("translation", model=model_checkpoint)
 # 测试翻译一个英文句子
 print(translator("Default to expanded threads"))
