@@ -112,7 +112,9 @@ if device == "mps":
     # 模型已在 MPS 上，数据加载器保持原样，训练时手动迁移 batch
 else:
     # CPU 或 CUDA：使用 Accelerator 自动管理设备
-    accelerator = Accelerator()
+    # 注意：Accelerator() 不指定参数时会自动检测设备，在 MPS 可用时会优先使用 MPS
+    # 如果要强制使用 CPU，需要明确指定 cpu=True
+    accelerator = Accelerator(cpu=True)
     # prepare() 会将模型和数据加载器移动到正确的设备，并设置分布式训练
     model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(
         model, optimizer, train_dataloader, eval_dataloader
@@ -278,8 +280,8 @@ from transformers import pipeline
 # ==================== 推理测试 ====================
 # 使用训练好的模型进行翻译推理
 # 注意：这里使用的是预训练checkpoint作为示例，实际应使用本地训练的模型：
-# model_checkpoint = "marian-finetuned-kde4-en-to-fr-accelerate" 或 output_dir
-model_checkpoint = "axelloo/marian-finetuned-kde4-en-to-zh"
+# model_checkpoint = "marian-finetuned-kde4-en-to-zh-accelerate" 或 output_dir
+model_checkpoint = "axelloo/marian-finetuned-kde4-en-to-zh-accelerate"
 translator = pipeline("translation", model=model_checkpoint)
 # 测试翻译一个英文句子
 print(translator("Default to expanded threads"))
