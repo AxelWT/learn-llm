@@ -325,6 +325,8 @@ print(drug_dataset_reloaded_jsonl)
 - 训练 tokenizer 是一个统计过程，它试图确定哪些子词最适合为给定的语料库选择，确定的过程取决于分词算法。
 - 它是确定性的，这意味着在相同的语料库上使用相同的算法进行训练时，得到的结果总是相同的。
 
+- doc: llm-course-part-2-tokenizers.md
+
 ---
 
 #### 7.主要的 NLP 任务
@@ -363,8 +365,13 @@ print(drug_dataset_reloaded_jsonl)
 
 #### 8.如何寻求帮助
 
+- stackoverflow
+- huggingface 论坛
+
 ---
 
 #### 9.构建并分享你的模型
+
+- gradio 使用
 
 ---
