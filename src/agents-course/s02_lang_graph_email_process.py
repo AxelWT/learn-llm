@@ -4,16 +4,33 @@ from langgraph.graph import StateGraph, END, START
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, AIMessage
 
+# ============trace============
+# 增加 trace 监控，在 langfuse 官网页面上查看，可以注释掉不用它
+import os
+
+# Get keys for your project from the project settings page: https://cloud.langfuse.com
+os.environ["LANGFUSE_PUBLIC_KEY"] = "pk-lf-..."
+os.environ["LANGFUSE_SECRET_KEY"] = "sk-lf-..."
+os.environ["LANGFUSE_HOST"] = "https://us.cloud.langfuse.com"  # 🇺🇸 US region
+
+from langfuse.langchain import CallbackHandler
+
+# 为 LangGraph/Langchain 初始化 Langfuse CallbackHandler（跟踪）
+langfuse_handler = CallbackHandler()
+# ============trace============
 
 class EmailState(TypedDict):
     # 正在处理的电子邮件
     email: Dict[str, Any]  # 包含主题、发件人、正文等。
+
     # 分析与决策
     is_spam: Optional[bool]
     spam_reason: Optional[str]
     email_category: Optional[str]
+
     # 响应生成
     draft_response: Optional[str]
+
     # 处理元数据
     messages: List[Dict[str, Any]]  # 跟踪与 LLM 的对话以进行分析
 
@@ -37,17 +54,17 @@ def classify_email(state: EmailState):
     """Alfred uses an LLM to determine if the email is spam or legitimate"""
     email = state["email"]
 
-    # 为 LLM 准备提示词（要求 JSON 格式输出）
+    # Prepare prompt for LLM (require JSON format output)
     prompt = f"""
-            分析以下邮件并判断是否为垃圾邮件。
+            Analyze the following email and determine if it is spam.
 
-            邮件信息：
-            发件人: {email['sender']}
-            主题: {email['subject']}
-            正文: {email['body']}
+            Email Information:
+            Sender: {email['sender']}
+            Subject: {email['subject']}
+            Body: {email['body']}
 
-            请严格按照以下 JSON 格式输出结果（不要输出其他内容）：
-{{"is_spam": true/false, "spam_reason": "如果是垃圾邮件的原因，否则为null", "email_category": "inquiry/complaint/thank_you/request/information/general"}}
+            Please output the result strictly in the following JSON format (do not output anything else):
+{{"is_spam": true/false, "spam_reason": "reason if spam, otherwise null", "email_category": "inquiry/complaint/thank_you/request/information/general"}}
 """
 
     # Call the LLM
@@ -97,7 +114,7 @@ def classify_email(state: EmailState):
 
 def handle_spam(state: EmailState):
     """Alfred discards spam email with a note"""
-    reason = state.get("spam_reason") or "未提供具体原因"
+    reason = state.get("spam_reason") or "No specific reason provided"
     print(f"Alfred has marked the email as spam. Reason: {reason}")
     print("The email has been moved to the spam folder.")
 
@@ -223,14 +240,26 @@ spam_email = {
 
 # 处理合法电子邮件
 print("\nProcessing legitimate email...")
-legitimate_result = compiled_graph.invoke({
-    "email": legitimate_email,
-    "is_spam": None,
-    "spam_reason": None,
-    "email_category": None,
-    "draft_response": None,
-    "messages": []
-})
+# legitimate_result = compiled_graph.invoke({
+#     "email": legitimate_email,
+#     "is_spam": None,
+#     "spam_reason": None,
+#     "email_category": None,
+#     "draft_response": None,
+#     "messages": []
+# })
+
+# 处理合法电子邮件 langfuse 进行日志链路 trace
+legitimate_result = compiled_graph.invoke(
+    input={"email": legitimate_email,
+           "is_spam": None,
+           "spam_reason": None,
+           "email_category": None,
+           "draft_response": None,
+           "messages": []
+           },
+    config={"callbacks": [langfuse_handler]}
+)
 
 # 处理垃圾邮件
 print("\nProcessing spam email...")
