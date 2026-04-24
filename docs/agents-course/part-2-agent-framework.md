@@ -15,13 +15,23 @@
 
 ## smolAgents框架
 
-- to-do
+- smolagents 的关键优势
+
+  简洁性： 最小的代码复杂性和抽象层，使框架易于理解、采用和扩展。
+  灵活的 LLM 支持： 通过与 Hugging Face 工具和外部 API 的集成，支持任何 LLM。
+  代码优先方法： 首选支持直接在代码中编写操作的 Code Agents，无需解析并简化工具调用。
+  HF Hub 集成： 与 Hugging Face Hub 无缝集成，允许使用 Gradio Spaces 作为工具。
 
 ---
 
 ## llamaIndex框架
 
-- to-do
+- 虽然LlamaIndex与其他框架（如 smolagents）有相似之处，但具备以下关键优势：
+
+  清晰的工作流系统。通过事件驱动和异步优先的语法，工作流帮助您逐步分解智能体的决策过程，实现逻辑的清晰组合与组织。
+  基于 LlamaParse 的高级文档解析 专为 LlamaIndex 打造的文档解析工具，尽管是付费功能，但提供无缝集成体验。
+  丰富的即用组件 凭借长期的技术积累，LlamaIndex 与众多框架兼容，提供大量经过验证的可靠组件（如 LLM、检索器、索引等）。
+  LlamaHub 提供了数百个此类组件、智能体和工具的注册中心，方便您在 LlamaIndex 中直接使用。
 
 ---
 
