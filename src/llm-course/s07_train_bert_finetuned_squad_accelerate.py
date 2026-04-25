@@ -512,6 +512,12 @@ for epoch in range(num_train_epochs):
     if accelerator.is_main_process:
         tokenizer.save_pretrained(output_dir)
         accelerator.print(f"模型已保存到 {output_dir}")
+        try:
+            unwrapped_model.push_to_hub(repo_name)
+            tokenizer.push_to_hub(repo_name)
+            accelerator.print(f"模型已推送到 Hub: {repo_name}")
+        except Exception as e:
+            accelerator.print(f"推送到 Hub 失败: {e}")
 
 print("\n训练完成！")
 
