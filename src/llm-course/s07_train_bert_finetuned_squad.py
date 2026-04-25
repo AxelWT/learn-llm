@@ -350,7 +350,7 @@ eval_set_for_model.set_format("torch")
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 print(f"使用设备: {device}")
 
-batch = {k: eval_set_for_model[k].to(device) for k in eval_set_for_model.column_names}
+batch = {k: eval_set_for_model[:len(eval_set_for_model)][k] for k in eval_set_for_model.column_names}
 trained_model = AutoModelForQuestionAnswering.from_pretrained(trained_checkpoint).to(device)
 
 # 执行推理
