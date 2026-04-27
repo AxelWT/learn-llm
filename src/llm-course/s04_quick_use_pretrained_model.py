@@ -8,6 +8,14 @@ camembert_fill_mask = pipeline("fill-mask", model="camembert-base")
 results = camembert_fill_mask("Le camembert est <mask> :)")
 # 输出预测结果，通常返回一个列表，包含多个候选词及其概率
 print(results)
+"""
+[{'score': 0.49091655015945435, 'token': 7200, 'token_str': 'délicieux', 'sequence': 'Le camembert est délicieux :)'}, 
+{'score': 0.10557064414024353, 'token': 2183, 'token_str': 'excellent', 'sequence': 'Le camembert est excellent :)'}, 
+{'score': 0.03453359007835388, 'token': 26202, 'token_str': 'succulent', 'sequence': 'Le camembert est succulent :)'}, 
+{'score': 0.03303172439336777, 'token': 528, 'token_str': 'meilleur', 'sequence': 'Le camembert est meilleur :)'}, 
+{'score': 0.030076900497078896, 'token': 1654, 'token_str': 'parfait', 'sequence': 'Le camembert est parfait :)'}]
+
+"""
 
 # 还可以使用模型架构实例化 checkpoint，建议使用 Auto*类，因为它们在设计时不依赖模型架构
 from transformers import AutoTokenizer, AutoModelForMaskedLM

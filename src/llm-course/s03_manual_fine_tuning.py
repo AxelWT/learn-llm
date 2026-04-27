@@ -14,7 +14,6 @@ def tokenize_function(example):
 
 tokenized_datasets = raw_datasets.map(tokenize_function, batched=True)
 data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
-
 # 以上是数据准备阶段
 
 # 删除模型不需要的列
@@ -24,6 +23,9 @@ tokenized_datasets = tokenized_datasets.rename_column("label", "labels")
 # 设置数据集的格式，使其返回 pytorch 张量而不是列表
 tokenized_datasets.set_format("torch")
 print(tokenized_datasets["train"].column_names)
+"""
+['labels', 'input_ids', 'token_type_ids', 'attention_mask']
+"""
 
 from torch.utils.data import DataLoader
 
@@ -31,8 +33,11 @@ from torch.utils.data import DataLoader
 train_dataloader = DataLoader(
     tokenized_datasets["train"], shuffle=True, batch_size=8, collate_fn=data_collator
 )
-# 第一个返回的是 batch 数量（注意每 batch 是 8 条数据），第二个返回的是总样本数量3668条，训练完所有 459个 batch 算作一次 epoch
 print(len(train_dataloader), len(tokenized_datasets["train"]))
+"""
+# 第一个返回的是 batch 数量（注意每 batch 是 8 条数据），第二个返回的是总样本数量3668条，训练完所有 459个 batch 算作一次 epoch
+459 3668
+"""
 # 定义评估数据加载器
 eval_dataloader = DataLoader(
     tokenized_datasets["validation"], batch_size=8, collate_fn=data_collator
@@ -41,6 +46,9 @@ eval_dataloader = DataLoader(
 for batch in train_dataloader:
     print({k: v.shape for k, v in batch.items()})
     break
+"""
+{'labels': torch.Size([8]), 'input_ids': torch.Size([8, 65]), 'token_type_ids': torch.Size([8, 65]), 'attention_mask': torch.Size([8, 65])}
+"""
 
 from transformers import AutoModelForSequenceClassification
 
@@ -51,7 +59,18 @@ for batch in train_dataloader:
     print(outputs.loss, outputs.logits.shape)
     print(outputs)
     break
-
+"""
+tensor(0.7678, grad_fn=<NllLossBackward0>) torch.Size([8, 2])
+SequenceClassifierOutput(loss=tensor(0.7678, grad_fn=<NllLossBackward0>), 
+logits=tensor([[ 0.4507, -0.3374],
+        [ 0.4436, -0.3329],
+        [ 0.4424, -0.3326],
+        [ 0.4530, -0.3285],
+        [ 0.4412, -0.3299],
+        [ 0.4282, -0.3515],
+        [ 0.4315, -0.3450],
+        [ 0.4229, -0.3282]], grad_fn=<AddmmBackward0>), hidden_states=None, attentions=None)
+"""
 # 训练过程
 #   1 epoch:
 #   ├── batch 1: 8 样本   → 前向传播 → 计算损失 → 反向传播 → 更新权重
@@ -74,7 +93,7 @@ for batch in train_dataloader:
 #   │ 数据1 ─┐                              │
 #   │ 数据2 ─┤                              │
 #   │ 数据3 ─┼──→ 模型 ──→ 8个输出 ──→ 1个loss │
-#   │ ...   ─┤      (并行计算)              │
+#   │ ...  ─┤      (并行计算)                 │
 #   │ 数据8 ─┘                              │
 #   └─────────────────────────────────────┘
 #               ↓
@@ -115,13 +134,13 @@ for batch in train_dataloader:
 #   总结
 #
 #   ┌──────────┬────────────────────────────────────┐
-#   │   概念   │                说明                │
+#   │   概念    │                说明                │
 #   ├──────────┼────────────────────────────────────┤
-#   │ Batch 内 │ 8 条数据同时计算，产生一个平均损失 │
+#   │ Batch 内 │ 8 条数据同时计算，产生一个平均损失       │
 #   ├──────────┼────────────────────────────────────┤
-#   │ 参数更新 │ 每个 batch 结束后更新一次          │
+#   │ 参数更新  │ 每个 batch 结束后更新一次             │
 #   ├──────────┼────────────────────────────────────┤
-#   │ 1 epoch  │ 参数更新 459 次（= batch 数量）    │
+#   │ 1 epoch  │ 参数更新 459 次（= batch 数量）       │
 #   └──────────┴────────────────────────────────────┘
 
 
@@ -138,9 +157,12 @@ optimizer = AdamW(model.parameters(), lr=5e-5)
 from transformers import get_scheduler
 
 num_epoches = 3
-# 训练步数 = epoch 数量 * batch 批次数（一个 batch 全丢进去训练一次）= 3 * 459 = 1377【总训练步数 1377 整个训练过程参数更新 1377 次】
 num_training_steps = num_epoches * len(train_dataloader)
 print(num_training_steps)
+"""
+1377
+# 训练步数 = epoch 数量 * batch 批次数（一个 batch 全丢进去训练一次）= 3 * 459 = 1377【总训练步数 1377 整个训练过程参数更新 1377 次】
+"""
 
 # "linear" # 调度策略
 # 学习率变化曲线（linear策略）：
@@ -262,6 +284,9 @@ for batch in eval_dataloader:
 
 # 打印评估结果
 print(metric.compute())
+"""
+{'accuracy': 0.875, 'f1': 0.9122203098106713}
+"""
 # 微调模型保存
 model.save_pretrained("./test-trainer")
 tokenizer.save_pretrained("./test-trainer")
@@ -277,63 +302,54 @@ gc.collect()
 gc.collect()
 print("训练完成，资源已清理")
 
-# # 评估示例数据：
-# labels = torch.tensor([1, 0])
-#
-# 完整示例：
-#
-# batch = {
-#     "input_ids": torch.tensor([
-#         [101, 2023, 2003, ...],
-#         # 样本0的输入token
-#         [101, 2054, 2856, ...]
-#         # 样本1的输入token
-#     ]),
-#     # shape: [2, seq_len]
-#
-#     "attention_mask": torch.tensor([
-#         [1, 1, 1, ...],
-#         [1, 1, 0, ...]
-#     ]),
-#     # shape: [2, seq_len]
-#
-#     "labels": torch.tensor([1, 0])
-#     # shape: [2]
-# }
-# #              ↑  ↑
-# #              │  └── 样本1的真实标签：0（不是同义改写）
-# #              └───── 样本0的真实标签：1（是同义改写）
-#
-# predictions
-# 和
-# labels
-# 的对应关系：
-#
-# predictions = torch.tensor([1,
-#                             0])  # 模型预测
-# labels = torch.tensor([1,
-#                        0])  # 真实标签
-#
-# # 对比：
-# # 样本0：预测1，真实1 → 正确 ✓
-# # 样本1：预测0，真实0 → 正确 ✓
-#
-# # 这批样本全部预测正确
-#
-# 另一个例子（有错误预测）：
-#
-# predictions = torch.tensor([1, 0, 1,
-#                             0])  # 模型预测
-# labels = torch.tensor([1, 1, 1,
-#                        0])  # 真实标签
-#
-# # 对比：
-# # 样本0：预测1，真实1 → 正确 ✓
-# # 样本1：预测0，真实1 → 错误 ✗
-# # 样本2：预测1，真实1 → 正确 ✓
-# # 样本3：预测0，真实0 → 正确 ✓
-#
-# MRPC
-# 标签含义：
-# - 0 = 两个句子不是同义改写
-# - 1 = 两个句子是同义改写
+"""
+# 评估示例数据：
+labels = torch.tensor([1, 0])
+
+完整示例：
+
+batch = {
+    "input_ids": torch.tensor([
+        [101, 2023, 2003, ...],
+        # 样本0的输入token
+        [101, 2054, 2856, ...]
+        # 样本1的输入token
+    ]),
+    "attention_mask": torch.tensor([
+        [1, 1, 1, ...],
+        [1, 1, 0, ...]
+    ]),
+    "labels": torch.tensor([1, 0])
+}
+#              ↑  ↑
+#              │  └── 样本1的真实标签：0（不是同义改写）
+#              └───── 样本0的真实标签：1（是同义改写）
+
+
+predictions和labels的对应关系?
+
+predictions = torch.tensor([1, 0])  # 模型预测
+labels = torch.tensor([1, 0])  # 真实标签
+
+# 对比：
+# 样本0：预测1，真实1 → 正确 ✓
+# 样本1：预测0，真实0 → 正确 ✓
+
+# 这批样本全部预测正确
+
+另一个例子（有错误预测）：
+
+predictions = torch.tensor([1, 0, 1, 0])  # 模型预测
+labels = torch.tensor([1, 1, 1, 0])  # 真实标签
+
+# 对比：
+# 样本0：预测1，真实1 → 正确 ✓
+# 样本1：预测0，真实1 → 错误 ✗
+# 样本2：预测1，真实1 → 正确 ✓
+# 样本3：预测0，真实0 → 正确 ✓
+
+MRPC
+标签含义：
+- 0 = 两个句子不是同义改写
+- 1 = 两个句子是同义改写
+"""
