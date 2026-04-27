@@ -47,13 +47,21 @@ async def get_comments_async(session, issue_number, headers, max_retries=3):
 
 
 async def fetch_all_comments_async(issue_numbers, headers, concurrency=5):
-    """异步并发获取所有 issue 评论"""
+    """异步并发获取所有 issue 评论，使用信号量控制并发"""
     comments_dict = {}
-    connector = aiohttp.TCPConnector(limit=concurrency, ssl=False)  # 控制并发数
+    semaphore = asyncio.Semaphore(concurrency)
+    connector = aiohttp.TCPConnector(limit=concurrency, ssl=False)
     timeout = aiohttp.ClientTimeout(total=60)
 
+    async def limited_get(session, issue_number):
+        async with semaphore:
+            result = await get_comments_async(session, issue_number, headers)
+            # 请求之间加间隔，避免触发 GitHub 二级速率限制
+            await asyncio.sleep(0.5)
+            return result
+
     async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-        tasks = [get_comments_async(session, num, headers) for num in issue_numbers]
+        tasks = [limited_get(session, num) for num in issue_numbers]
         results = await tqdm_asyncio.gather(*tasks, desc="Fetching comments")
 
         for issue_num, comments in results:
@@ -82,7 +90,10 @@ async def main():
     print(issues_with_comments_dataset)
     print(f"Sample issue comments: {issues_with_comments_dataset[0]['comments']}")
 
-    issues_with_comments_dataset.push_to_hub(repo_id="<acount>/<repo_id>",
+    # 保存一份到本地，防止网络断开，上传不了时数据丢失
+    issues_with_comments_dataset.save_to_disk("issues-with-comments-dataset")
+    # 保存到 hub
+    issues_with_comments_dataset.push_to_hub(repo_id="axelloo/github-issues",
                                              commit_message="huggingface/datasets repository issues and comments")
 
     return issues_with_comments_dataset
