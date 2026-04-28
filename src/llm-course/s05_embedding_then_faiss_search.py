@@ -185,10 +185,16 @@ Dataset({
 # FAISS 是 Facebook 开发的高效向量相似度搜索库，支持大规模向量快速检索
 embeddings_dataset.add_faiss_index(column="embeddings")
 
-# 保存数据集和 FAISS 索引
-embeddings_dataset.save_to_disk("embeddings_dataset")
+# 保存 FAISS 索引（先保存索引）
 embeddings_dataset.get_index("embeddings").save("embeddings_index.faiss")
+
+# 删除索引后再保存数据集（save_to_disk 不支持带索引的数据集）
+embeddings_dataset.drop_index("embeddings")
+embeddings_dataset.save_to_disk("embeddings_dataset")
 print("数据集和索引已保存")
+
+# 重新加载索引用于后续搜索
+embeddings_dataset.load_faiss_index("embeddings", "embeddings_index.faiss")
 """
 下次加载时使用：                                                                                                                                                                   
 

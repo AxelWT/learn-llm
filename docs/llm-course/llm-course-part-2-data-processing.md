@@ -909,15 +909,21 @@ Dataset({
 # FAISS 是 Facebook 开发的高效向量相似度搜索库，支持大规模向量快速检索
 embeddings_dataset.add_faiss_index(column="embeddings")
 
-# 保存数据集和 FAISS 索引
-embeddings_dataset.save_to_disk("embeddings_dataset")
+# 保存 FAISS 索引（先保存索引）
 embeddings_dataset.get_index("embeddings").save("embeddings_index.faiss")
+
+# 删除索引后再保存数据集（save_to_disk 不支持带索引的数据集）
+embeddings_dataset.drop_index("embeddings")
+embeddings_dataset.save_to_disk("embeddings_dataset")
 print("数据集和索引已保存")
+
+# 重新加载索引用于后续搜索
+embeddings_dataset.load_faiss_index("embeddings", "embeddings_index.faiss")
 """
 下次加载时使用：                                                                                                                                                                   
-                                                                                                                                                                                     
+
   from datasets import load_from_disk                                                                                                                                                
-                                                                                                                                                                                     
+
   embeddings_dataset = load_from_disk("embeddings_dataset")                                                                                                                          
   embeddings_dataset.load_faiss_index("embeddings", "embeddings_index.faiss") 
 """
@@ -972,17 +978,17 @@ URL: https://github.com/huggingface/datasets/issues/3490
 ==================================================
 
 这个模型使用点积相似度，分数越高表示越相似，但没有固定上限。                                                                                                                       
-                                                                                                                                                                                     
+
   判断方法：                                                                                                                                                                         
-                                                            
+
   1. 看分数分布 — 检索返回的 5 条结果中，如果最高分是 31，第二名是 25，差距明显，那 31 分算是比较好的匹配。                                                                          
   2. 看阈值经验 — 对于这个模型（multi-qa-mpnet-base-dot-v1），一般：
     - > 60-70：非常相关，高质量匹配                                                                                                                                                  
     - 30-50：中等相关，有一定语义相似                                                                                                                                                
     - < 20：相关性较弱                                                                                                                                                               
-                                                                                                                                                                                     
+
   31 分属于中等水平，表示查询和结果有一定语义关联，但不是高度匹配。                                                                                                                  
-                                                                                                                                                                                     
+
   如果想提高匹配精度，可以：                                                                                                                                                         
   - 增加检索数量 k=10 或更多，看分数分布                    
   - 设置阈值过滤，如只保留 scores > 40 的结果
