@@ -1,6 +1,6 @@
-## 构建并分享你的模型
+# 构建并分享你的模型
 
-### 构建你的第一个应用
+## 1.构建你的第一个应用
 
 - 文本生成，通过 pipline 拉取模型到本地缓存
 
@@ -31,7 +31,7 @@ gr.Interface(fn=predict, inputs="text", outputs="text").launch()
 
 ---
 
-## 了解接口类
+## 2.了解接口类
 
 - 音频反转，演示接收不同类型的输入和返回不同类型的输出
 
@@ -121,13 +121,13 @@ gr.Interface(
 
 ---
 
-## 与他人分享演示
+## 3.与他人分享演示
 
 - Gradio 演示可以通过两种方式进行分享：使用 临时的共享链接 或者 在 Spaces 上永久托管。
 
 ---
 
-## 与 huggingface hub整合
+## 4.与 huggingface hub整合
 
 ```Python
 import gradio as gr
@@ -159,7 +159,7 @@ gr.Interface(
 
 ---
 
-## 高级界面功能
+## 5.高级界面功能
 
 - 简单聊天框功能
 
@@ -228,6 +228,15 @@ gr.Interface(
 
 ---
 
-## gradio blocks 简介
+## 6.gradio blocks 简介
+
+- 略
+
+---
+
+## 7.如何寻求帮助
+
+- stackoverflow
+- huggingface 论坛
 
 ---

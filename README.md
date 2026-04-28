@@ -85,8 +85,8 @@ trainer.train()
 
 ### 参考文档
 
-- [llm-course-part-1.md](docs/llm-course/llm-course-part-1.md) - Transformer基础与微调
-- [llm-course-part-2.md](docs/llm-course/llm-course-part-2.md) - Datasets库与NER任务
+- [llm-course-part-1.md](docs/llm-course/llm-course-part-1-fine-tuning.md) - Transformer基础与微调
+- [llm-course-part-2.md](docs/llm-course/llm-course-part-2-data-processing.md) - Datasets库与NER任务
 - [finetuning-principles.md](docs/llm-course/reference/finetuning-principles.md) - 领域适应与迁移学习
 - [datasets-large-data-principles.md](docs/llm-course/reference/datasets-large-data-principles.md) - 大数据处理原则
 

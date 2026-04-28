@@ -1,505 +1,734 @@
-# HuggingFace LLM 课程详细总结
+# 模型微调全流程总结
 
-## 课程概述
+## 一、Transformer 模型基础
 
-本课程是 HuggingFace 官方 LLM 学习课程的中文学习笔记和实践代码，涵盖了从 Transformer 基础到大语言模型训练的完整知识体系。
+### 1. 什么是 NLP（自然语言处理）？
 
----
+**定义：** NLP 是语言学和机器学习的交叉领域，专注于理解与人类语言相关的一切。
 
-## 一、课程结构总览
+**目标：** 不仅理解单个单词，而是理解单词的上下文和语义关系。
 
-### 文档部分 (docs/llm-course/)
-- **llm-course-part-1.md**: 课程第一部分核心笔记
-- **llm-course-part-2.md**: 课程第二部分核心笔记
-- **llm-course-part-3.md**: Gradio 应用构建笔记
-- **llm-course-part-2-*.md**: 各类 NLP 任务详解（NER、翻译、MLM、CLM、摘要、问答、分词器）
-- **reference/*.md**: 深入原理参考文档
+### 2. Transformer 是什么？
 
-### 代码部分 (src/llm-course/)
-- **s02_*.py**: Transformers 基础使用
-- **s03_*.py**: 数据集加载与微调
-- **s04_*.py**: 预训练模型快速使用
-- **s05_*.py**: 数据集处理与语义搜索
-- **s06_*.py**: 分词器训练
-- **s07_*.py**: 各类任务微调实践
+**定义：** Transformer 是一种神经网络架构，2017年由Google提出，是现代大语言模型（BERT、GPT等）的基础。
 
----
+**核心创新：** 自注意力机制（Self-Attention）
 
-## 二、核心知识点详解
-
-### 1. Transformer 模型基础
-
-#### 什么是 NLP？
-NLP（自然语言处理）是语言学和机器学习的交叉领域，专注于理解与人类语言相关的一切。NLP 任务的目标不仅是理解单个单词，更要理解这些单词的上下文。
-
-#### 常见 NLP 任务类型
-| 任务类型 | 描述 | 示例 |
-|---------|------|------|
-| 文本分类 | 对整个句子进行分类 | 情感分析、垃圾邮件检测 |
-| 词级分类 | 对句子中每个词进行分类 | 命名实体识别(NER)、词性标注 |
-| 文本生成 | 生成文本内容 | GPT 系列模型 |
-| 问答抽取 | 从文本中提取答案 | SQuAD 任务 |
-| 序列转换 | 从输入文本生成新句子 | 翻译、摘要 |
-
-#### 模型架构分类
 ```
-仅编码器（BERT）:
-输入 → [编码器] → 理解表示
-       双向↑
-       输出是向量表示，不是文本
+传统模型（RNN）：
+  逐个处理单词，像读书一样从头读到尾
+  问题：后面的内容看不到前面的，处理长文本困难
 
-仅解码器（GPT）:
-输入 → [解码器] → 生成文本
-       单向↑
-       每次只能看前面已生成的内容
-
-编码器-解码器（T5）:
-输入 → [编码器] → [解码器] → 输出文本
-       双向↑        单向↑
-       先理解输入    再生成输出
+Transformer：
+  同时看到所有单词，像一眼看整篇文章
+  优势：能捕捉长距离的语义关系，并行计算速度快
 ```
 
----
-
-### 2. Transformers 库使用
-
-#### Pipeline 快速使用
-Pipeline 是 HuggingFace 提供的高层 API，用于快速加载和使用预训练模型：
-
-```python
-from transformers import pipeline
-
-# 文本生成
-generator = pipeline("text-generation")
-result = generator("My favorite programming language is")
-
-# 文本填空
-fill_mask = pipeline("fill-mask", model="camembert-base")
-result = fill_mask("Le camembert est <mask> :)")
-```
-
-#### 分词器（Tokenizer）核心功能
-分词器是 Pipeline 的核心组件，负责：
-1. **预处理**：将文本转换为模型能理解的数字（Tensor）
-2. **后处理**：将数字转换回文本
-
-```python
-from transformers import AutoTokenizer
-
-tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
-sequence = "Using a Transformer network is simple"
-
-# 分词 → 转ID → 解码
-tokens = tokenizer.tokenize(sequence)
-ids = tokenizer.convert_tokens_to_ids(tokens)
-decoded = tokenizer.decode(ids)
-```
-
-#### 分词算法对比
-| 算法 | 代表模型 | 特点 |
-|------|---------|------|
-| **BPE** | GPT-2, RoBERTa | 字节级，频率最高的相邻Token合并 |
-| **WordPiece** | BERT | 使用 `##` 前缀，最大化语言模型似然度 |
-| **Unigram** | T5, mBART | 从大词表逐步剔除，概率模型 |
-
----
-
-### 3. 微调预训练模型
-
-#### 微调流程概述
-```
-原始数据 → 分词处理 → 数据集预处理 → 动态填充 → 模型训练 → 评估 → 保存
-```
-
-#### Trainer API vs 手动训练循环
-
-**使用 Trainer API（推荐新手）**:
-```python
-from transformers import Trainer, TrainingArguments
-
-training_args = TrainingArguments("test-trainer", eval_strategy="epoch")
-trainer = Trainer(
-    model=model,
-    args=training_args,
-    train_dataset=tokenized_datasets["train"],
-    eval_dataset=tokenized_datasets["validation"],
-    data_collator=data_collator,
-    compute_metrics=compute_metrics,
-)
-trainer.train()
-```
-
-**手动训练循环（推荐进阶）**:
-```python
-from torch.optim import AdamW
-from transformers import get_scheduler
-
-optimizer = AdamW(model.parameters(), lr=5e-5)
-lr_scheduler = get_scheduler("linear", optimizer=optimizer, num_training_steps=num_training_steps)
-
-model.train()
-for epoch in range(num_epochs):
-    for batch in train_dataloader:
-        outputs = model(**batch)
-        loss = outputs.loss
-        loss.backward()
-        optimizer.step()
-        lr_scheduler.step()
-        optimizer.zero_grad()
-```
-
-#### 关键组件详解
-```
-┌────────────────────┬──────────────────────────────────────┐
-│        组件         │                 作用                  │
-├────────────────────┼──────────────────────────────────────┤
-│ AdamW              │ 优化器，带权重衰减的Adam               │
-├────────────────────┼──────────────────────────────────────┤
-│ lr_scheduler       │ 学习率调度器，让学习率随训练逐渐降低    │
-├────────────────────┼──────────────────────────────────────┤
-│ DataCollator       │ 数据整理器，负责填充和批处理           │
-└────────────────────┴──────────────────────────────────────┘
-```
-
----
-
-### 4. Datasets 库核心原理
-
-#### Apache Arrow 架构
-Datasets 库使用 Apache Arrow 列式存储格式，实现高效的大数据处理：
+### 3. Transformer 核心组件
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Hugging Face Datasets                      │
-├─────────────────────────────────────────────────────────────┤
-│                      Apache Arrow                             │
-│   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│   │  Column 1   │  │  Column 2   │  │  Column 3   │  ...     │
-│   └─────────────┘  └─────────────┘  └─────────────┘          │
-├─────────────────────────────────────────────────────────────┤
-│                 Memory Mapping (内存映射)                      │
-│                      ↓                                        │
-│                 Disk Storage (磁盘存储)                        │
+│                    Transformer 架构                          │
 └─────────────────────────────────────────────────────────────┘
+
+  输入文本: "我喜欢学习机器学习"
+      │
+      ▼
+  ┌──────────────┐
+  │  Embedding   │  文字 → 数字向量
+  │  (词嵌入)     │  每个 token → 768维向量
+  └──────────────┘
+      │
+      ▼
+  ┌──────────────┐
+  │  Position    │  加上位置信息
+  │  Encoding    │  让模型知道词的顺序
+  └──────────────┘
+      │
+      ▼
+  ┌──────────────────────────────────────┐
+  │  Self-Attention (自注意力)            │
+  │  ┌────────────────────────────────┐  │
+  │  │ "我" 关注谁？ → "喜欢"、"学习"   │  │
+  │  │ "机器学习" 关注谁？ → "学习"     │  │
+  │  │ 每个词都能看其他所有词           │  │
+  │  └────────────────────────────────┘  │
+  │  作用：理解词与词之间的关系           │
+  └──────────────────────────────────────┘
+      │
+      ▼
+  ┌──────────────┐
+  │  Feed Forward│  进一步处理
+  │  Network     │  提取语义信息
+  └──────────────┘
+      │
+      ▼  (重复多层)
+      │
+      ▼
+  ┌──────────────┐
+  │  Output      │  输出结果
+  └──────────────┘
 ```
 
-#### 关键技术原理
+**自注意力通俗理解：**
 
-| 技术 | 作用 | 优势 |
-|------|------|------|
-| **Memory Mapping** | 磁盘数据映射到内存 | GB级数据集仅用MB级RAM |
-| **Zero-Copy** | 无拷贝读取 | 高频数据转换效率高 |
-| **Columnar** | 列式存储 | 只访问需要的列 |
-| **Streaming** | 流式加载 | 超大数据集处理 |
-| **Lazy Processing** | 惰性执行 | 按需执行处理管道 |
+```
+例子："猫坐在垫子上，它很舒服"
 
-#### 数据集操作示例
+自注意力作用：
+  "它" 这个词应该关注谁？
+  - 关注"猫" → 知道"它"指的是猫
+  - 关注"垫子" → 也有可能指垫子
+  
+模型通过注意力权重判断：更可能指"猫"
+```
+
+### 4. Transformer 家族
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  Transformer 模型家族                        │
+└─────────────────────────────────────────────────────────────┘
+
+  ┌─────────────┐
+  │ Transformer │ (2017 Google，原始架构)
+  └─────────────┘
+        │
+   ┌────┴────┐
+   │         │
+   ▼         ▼
+┌─────┐   ┌─────┐
+│ BERT│   │ GPT │
+│编码器│   │解码器│
+└─────┘   └─────┘
+   │         │
+   ▼         ▼
+理解类任务  生成类任务
+- 分类      - 写文章
+- 问答      - 翻译
+- 搜索      - 对话
+```
+
+**BERT vs GPT 对比：**
+
+| 对比项 | BERT（编码器） | GPT（解码器） |
+|--------|---------------|---------------|
+| 方向 | 双向（看前后文） | 单向（只看前文） |
+| 训练方式 | 填空（预测遮盖词） | 预测下一个词 |
+| 适用任务 | 理解类：分类、问答 | 生成类：写作、对话 |
+| 代表模型 | BERT, RoBERTa | GPT-3, GPT-4, ChatGPT |
+
+---
+
+## 二、NLP 任务类型与应用
+
+### 1. 四大类 NLP 任务
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    NLP 任务分类                              │
+└─────────────────────────────────────────────────────────────┘
+
+【类型一：文本分类】
+  输入：一段文本
+  输出：类别标签
+  
+  ┌────────────────────┐
+  │ "这部电影很精彩！"  │ → 情感分析 → "正面"
+  └────────────────────┘
+  
+  应用：情感分析、新闻分类、垃圾邮件检测
+
+【类型二：序列标注】
+  输入：一段文本
+  输出：每个词的标签
+  
+  ┌────────────────────────────────────┐
+  │ "张三在北京创办了公司"              │
+  │   ↓    ↓    ↓                      │
+  │  人名  地名  O                      │ → 命名实体识别
+  └────────────────────────────────────┘
+  
+  应用：命名实体识别(NER)、词性标注
+
+【类型三：文本生成】
+  输入：提示文本/条件
+  输出：新生成的文本
+  
+  ┌────────────────────┐
+  │ "请写一首关于春天的诗"│ → 文本生成 → "春风拂面..."
+  └────────────────────┘
+  
+  应用：机器翻译、摘要生成、对话系统、写作助手
+
+【类型四：问答/抽取】
+  输入：问题 + 文本
+  输出：答案
+  
+  ┌────────────────────────────────────┐
+  │ 文本："BERT是Google在2018年提出的" │
+  │ 问题："BERT是谁提出的？"            │ → "Google"
+  └────────────────────────────────────┘
+  
+  应用：问答系统、信息抽取
+```
+
+### 2. 常见 NLP 任务详解
+
+| 任务名称 | 输入 | 输出 | 应用场景 | 代表模型 |
+|---------|------|------|----------|---------|
+| **情感分析** | 评论文本 | 正/负情感 | 产品评论分析 | BERT微调 |
+| **命名实体识别(NER)** | 文本 | 实体类型 | 信息提取、知识图谱 | BERT+CRF |
+| **机器翻译** | 源语言文本 | 目标语言文本 | 跨语言翻译 | T5, mBART |
+| **文本摘要** | 长文章 | 简短摘要 | 新闻摘要 | BART, PEGASUS |
+| **问答系统** | 问题+文档 | 答案 | 智能客服 | BERT, DPR |
+| **文本生成** | 提示词 | 生成的文本 | 写作助手 | GPT系列 |
+| **句子相似度** | 两个句子 | 相似度分数 | 搜索匹配 | sentence-transformers |
+| **填空预测(MLM)** | 遮盖文本 | 预测遮盖词 | 预训练 | BERT |
+
+### 3. 任务对应的模型架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              任务类型 → 推荐模型架构                          │
+└─────────────────────────────────────────────────────────────┘
+
+  理解类任务（分类、标注、问答）
+      │
+      ▼
+  ┌─────────────────┐
+  │  Encoder-only   │
+  │  (BERT系列)     │
+  │                 │
+  │  - BERT         │
+  │  - RoBERTa      │
+  │  - ALBERT       │
+  │  - DistilBERT   │
+  └─────────────────┘
+
+  生成类任务（翻译、摘要、写作）
+      │
+      ▼
+  ┌─────────────────┐
+  │  Decoder-only   │    或    Encoder-Decoder
+  │  (GPT系列)      │         (T5, BART)
+  │                 │
+  │  - GPT-2/3/4    │         - T5 (翻译、问答)
+  │  - LLaMA        │         - BART (摘要)
+  │  - Claude       │         - mBART (多语言翻译)
+  └─────────────────┘
+
+  序列标注类任务
+      │
+      ▼
+  ┌─────────────────┐
+  │  BERT + CRF     │
+  │  或 BERT + 分类头│
+  │                 │
+  │  - NER (命名实体)│
+  │  - POS (词性标注)│
+  └─────────────────┘
+```
+
+### 4. 从预训练到任务适配
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              预训练模型 → 下游任务适配                        │
+└─────────────────────────────────────────────────────────────┘
+
+  预训练模型（通用语言能力）
+      │
+      │  加任务特定的"头"(Head)
+      │
+      ▼
+  ┌─────────────────────────────────┐
+  │  分类任务：Classification Head   │
+  │  输入 → BERT → 分类头 → 类别     │
+  │  (如：正面/负面情感)              │
+  └─────────────────────────────────┘
+  
+  ┌─────────────────────────────────┐
+  │  标注任务：Token Classification  │
+  │  输入 → BERT → 每个token分类     │
+  │  (如：人名/地名/其他)             │
+  └─────────────────────────────────┘
+  
+  ┌─────────────────────────────────┐
+  │  问答任务：Span Prediction       │
+  │  问题+文档 → BERT → 答案位置     │
+  │  (如：答案从第5词到第8词)         │
+  └─────────────────────────────────┘
+  
+  ┌─────────────────────────────────┐
+  │  生成任务：Language Model Head   │
+  │  输入 → GPT → 逐词生成           │
+  │  (如：根据前文生成后文)           │
+  └─────────────────────────────────┘
+```
+
+---
+
+## 三、为什么要微调模型
+
+**预训练模型的局限性：**
+- 预训练模型的分类头是随机初始化的，在下游任务上表现接近随机猜测
+- 例如二分类任务，未微调的模型准确率约50-70%，远低于实际需求
+
+**微调的价值：**
+- 让预训练模型适应特定任务（如文本分类、问答、翻译等）
+- 充分利用预训练模型已学习的大量通用知识
+- 只需少量任务数据即可获得优异效果
+- 相比从头训练，大幅降低计算成本和数据需求
+
+---
+
+## 四、微调的原理
+
+**核心思想：**
+预训练 → 微调（Pre-training → Fine-tuning）
+
+### 预训练 vs 微调：两种学习方式的对比
+
+| 对比项 | 预训练（无监督学习） | 微调（监督学习） |
+|--------|---------------------|-----------------|
+| **学习方式** | 无监督学习 | 监督学习 |
+| **数据要求** | 海量无标注文本（TB级） | 少量标注数据（几千条） |
+| **数据特点** | 只有文本，没有答案 | 文本 + 标注好的答案 |
+| **学习目标** | 学习通用语言知识（词义、语法） | 学习特定任务的模式 |
+| **训练方式** | 自监督：预测下一个词、填空等 | 有监督：根据答案调整模型 |
+| **例子** | BERT：预测被遮盖的词 | MRPC：判断两个句子是否同义 |
+
+**通俗理解：**
+
+- **预训练 = 读书学习**：模型读了海量书籍，学会了语言的基本规律，但不知道如何回答具体问题
+- **微调 = 考前刷题**：给模型做有答案的练习题，让它学会如何回答特定类型的考题
+
+**举例说明：**
+
+```
+预训练阶段（无监督）：
+输入：海量文本，如维基百科、新闻、小说等
+任务：预测下一个词、填空
+例子："今天天气很_____" → 模型学习预测"好/坏/晴..."
+答案来源：文本本身（自监督）
+
+微调阶段（监督）：
+输入：标注好的数据
+任务：判断两个句子是否同义
+例子：
+  句子1："苹果发布新手机"
+  句子2："Apple推出新款iPhone"
+  答案（人工标注）：同义（label=1）
+答案来源：人工标注（有监督）
+```
+
+### 为什么需要两种阶段？
+
+**预训练的作用：**
+- 让模型掌握语言基础能力
+- 一次训练，所有任务受益（通用性）
+
+**微调的作用：**
+- 让模型适应具体任务
+- 用少量数据快速获得专业能力
+
+---
+
+**关键技术：**
+
+| 组件 | 作用 |
+|------|------|
+| AdamW优化器 | 带权重衰减的Adam，正则化效果更好，是BERT训练的标准选择 |
+| 学习率调度器 | 学习率随训练逐渐降低，初期快速学习，后期精细调整 |
+| Batch训练 | 多样本并行计算，梯度更稳定，训练更平滑 |
+
+---
+
+## 五、微调流程
+
+**完整流程图：**
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           模型微调完整流程                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+     ┌──────────────────┐
+     │  1. 数据准备      │
+     │  load_dataset()   │
+     │  获取训练/验证集   │
+     └───┬──────────────┘
+         │
+         ▼
+     ┌──────────────────┐
+     │  2. 数据预处理    │
+     │  Tokenizer分词    │
+     │  → input_ids      │
+     │  动态填充         │
+     └───┬──────────────┘
+         │
+         ▼
+     ┌──────────────────┐
+     │  3. 模型加载      │
+     │  from_pretrained  │
+     │  ('bert-base')    │
+     │  num_labels=2     │
+     └───┬──────────────┘
+         │
+         ▼
+     ┌──────────────────┐
+     │  4. 训练配置      │
+     │  epochs=3         │
+     │  lr=5e-5          │
+     │  batch_size=8     │
+     │  AdamW优化器      │
+     └───┬──────────────┘
+         │
+         ▼
+     ┌──────────────────┐
+     │  5. 训练循环      │─────────────────────────────┐
+     │                   │                             │
+     │  ┌─────────────┐  │   每个batch:                │
+     │  │ 前向传播    │  │   1. outputs = model(**batch)│
+     │  │ 计算loss    │  │   2. loss.backward()        │
+     │  └─────────────┘  │   3. optimizer.step()       │
+     │        │          │   4. optimizer.zero_grad()  │
+     │        ▼          │                             │
+     │  ┌─────────────┐  │   重复num_epochs轮          │
+     │  │ 反向传播    │  │◄────────────────────────────┘
+     │  │ 计算梯度    │  │
+     │  └─────────────┘  │
+     │        │          │
+     │        ▼          │
+     │  ┌─────────────┐  │
+     │  │ 更新参数    │  │
+     │  │ 清零梯度    │  │
+     │  └─────────────┘  │
+     └───┬──────────────┘
+         │
+         ▼
+     ┌──────────────────┐
+     │  6. 评估         │
+     │  predict验证集    │
+     │  argmax(logits)  │
+     │  → 预测类别       │
+     │  计算accuracy/F1 │
+     └───┬──────────────┘
+         │
+         ▼
+     ┌──────────────────┐
+     │  7. 保存模型     │
+     │  save_pretrained │
+     │  (模型+tokenizer)│
+     └──────────────────┘
+```
+
+### 1. 数据准备
 ```python
 from datasets import load_dataset
-
-# 加载本地数据集
-dataset = load_dataset("csv", data_files="my_file.csv")
-
-# 数据处理
-dataset = dataset.map(process_function, batched=True)
-dataset = dataset.filter(filter_function)
-dataset = dataset.rename_column("old_name", "new_name")
-
-# 保存数据集
-dataset.save_to_disk("my_dataset")
+raw_datasets = load_dataset("glue", "mrpc")  # 加载MRPC句子对分类数据集
 ```
 
----
-
-### 5. 主要 NLP 任务详解
-
-#### 任务类型对比
-| 任务类型 | 架构 | Labels来源 | 参考答案本质 |
-|---------|------|-----------|-------------|
-| **标记分类(NER)** | Encoder | 外部标注 | 类别索引 |
-| **掩码建模(MLM)** | Encoder | 原始输入 | 被遮盖位置的原词 |
-| **翻译/摘要** | Encoder-Decoder | 目标文本 | 目标语言Token序列 |
-| **因果语言模型(CLM)** | Decoder-only | 原始输入 | 序列中的下一个词 |
-| **问答系统** | Encoder | 字符位置 | Token位置索引 |
-
-#### 命名实体识别(NER)
-
-核心挑战：将单词级标签对齐到Token级
-
+### 2. 数据预处理
 ```python
-def align_labels_with_tokens(labels, word_ids):
-    """
-    将单词级别的标签对齐到 token 级别
-    - 特殊 token 标为 -100（不参与损失计算）
-    - 每个单词的第一个 token 使用原标签
-    - 同一单词后续 token：B-XXX 改为 I-XXX
-    """
-    new_labels = []
-    current_word = None
-    for word_id in word_ids:
-        if word_id != current_word:
-            current_word = word_id
-            label = -100 if word_id is None else labels[word_id]
-            new_labels.append(label)
-        elif word_id is None:
-            new_labels.append(-100)
-        else:
-            label = labels[word_id]
-            if label % 2 == 1:  # B-XXX 改为 I-XXX
-                label += 1
-            new_labels.append(label)
-    return new_labels
+from transformers import AutoTokenizer, DataCollatorWithPadding
+
+tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+
+# 分词处理
+def tokenize_function(example):
+    return tokenizer(example["sentence1"], example["sentence2"], truncation=True)
+
+tokenized_datasets = raw_datasets.map(tokenize_function, batched=True)
+
+# 动态填充（保证batch内长度统一）
+data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 ```
 
-#### 掩码语言模型(MLM)
-
-自监督学习，用于领域适配：
-
-```
-数据处理流程:
-1. 分词 → 2. 分块 → 3. 动态遮盖(15%)
-
-遮盖策略(80-10-10规则):
-- 80% 替换为 [MASK]
-- 10% 替换为随机词
-- 10% 保持原样
-
-参考答案：被遮盖前的原始Token ID
-```
-
-#### 翻译任务（Seq2Seq）
-
-核心：处理双语分词和序列生成
-
+### 3. 模型加载
 ```python
-# 双分词器处理
-tokenizer(example["source"], example["target"])
+from transformers import AutoModelForSequenceClassification
 
-# DataCollatorForSeq2Seq 自动创建 decoder_input_ids
-# 将 labels 向右移动一位，添加起始符
+model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=2)
 ```
 
-#### 因果语言模型(CLM)
-
-从零训练GPT类模型：
-
-```
-数据处理流程:
-1. 流式加载 → 2. 分词 → 3. 串联 → 4. 分块 → 5. labels = input_ids.copy()
-
-训练逻辑:
-用当前词预测下一个词
-输入: [A, B, C] → 预测: [B, C, D]
-```
-
-#### 问答系统（Extractive QA）
-
-核心：滑动窗口处理长文本
-
+### 4. 训练配置
 ```python
-# 滑动窗口切分长文本
-tokenizer(
-    question, context,
-    truncation="only_second",
-    return_overflowing_tokens=True,
-    stride=128
+from transformers import TrainingArguments, Trainer
+
+training_args = TrainingArguments(
+    "test-trainer",
+    eval_strategy="epoch",  # 每个epoch结束后评估
+    num_train_epochs=3,
+    learning_rate=5e-5,
+    per_device_train_batch_size=8
+)
+```
+
+### 5. 训练循环
+```python
+trainer = Trainer(
+    model,
+    training_args,
+    train_dataset=tokenized_datasets["train"],
+    eval_dataset=tokenized_datasets["validation"],
+    data_collator=data_collator,
+    processing_class=tokenizer,
+    compute_metrics=compute_metrics
 )
 
-# 输出：start_logits, end_logits
-# 参考答案：答案的起始和结束Token索引
+trainer.train()
 ```
 
----
-
-### 6. 分词器训练
-
-#### 为什么要训练新分词器？
-当预训练模型分词器在处理特定领域文本（如中文、法律文档、Python代码）时效率低，需要重新训练。
-
-#### 训练流程
+**手动训练循环（无Trainer API）：**
 ```python
-from transformers import AutoTokenizer
+# 优化器和学习率调度器
+optimizer = AdamW(model.parameters(), lr=5e-5)
+lr_scheduler = get_scheduler("linear", optimizer, num_training_steps=num_training_steps)
 
-# 加载旧分词器作为模板
-old_tokenizer = AutoTokenizer.from_pretrained("gpt2")
-
-# 训练新分词器
-new_tokenizer = old_tokenizer.train_new_from_iterator(
-    training_corpus,  # 语料库迭代器
-    vocab_size=52000  # 新词表大小
-)
-
-# 保存
-new_tokenizer.save_pretrained("my-tokenizer")
-new_tokenizer.push_to_hub("my-tokenizer")
+# 训练
+model.train()
+for epoch in range(num_epochs):
+    for batch in train_dataloader:
+        outputs = model(**batch)       # 前向传播
+        loss = outputs.loss
+        loss.backward()                # 反向传播
+        optimizer.step()               # 更新参数
+        lr_scheduler.step()            # 更新学习率
+        optimizer.zero_grad()          # 清零梯度
 ```
 
-#### 快速分词器的特殊能力
-- **offset_mapping**: 记录每个Token在原文本中的字符位置
-- **word_ids()**: 获取Token对应的单词索引
-- **滑动窗口**: 处理超长文本时切分重叠块
-
----
-
-### 7. 自回归模型详解
-
-#### 核心定义
-**自回归(Autoregressive)** = 用前面的词预测后面的词，一个接一个生成。
-
-#### 数学表达
-$$P(w_1, w_2, ..., w_n) = P(w_1) \times P(w_2|w_1) \times P(w_3|w_1,w_2) \times ...$$
-
-#### 与掩码模型对比
-| 类型 | 代表模型 | 预测方式 | 适用场景 |
-|------|----------|----------|----------|
-| **自回归** | GPT 系列 | 从左到右，看前面预测后面 | 文本生成、对话 |
-| **掩码模型** | BERT 系列 | 遮住中间词，看前后预测中间 | 文本理解、分类 |
-
----
-
-### 8. 微调原理详解
-
-#### 两阶段微调流程
-```
-第一步：领域微调（学会"行话"）
-- 用无标签专业文本训练
-- 得到"法律版BERT"或"医学版BERT"
-
-第二步：任务微调（学会"干活"）
-- 加上任务头(Task Head)
-- 用有标签数据训练
-- 得到最终应用模型
-```
-
-#### 任务头(Task Head)
-任务头是模型末端的功能层：
-
-| 任务头类型 | 输出 | 用途 |
-|-----------|------|------|
-| Classification Head | 类别概率 | 情感分析 |
-| NER Head | 每个Token的标签 | 实体识别 |
-| QA Head | 起始和结束位置 | 问答抽取 |
-| LM Head | 词表概率分布 | 文本生成 |
-
----
-
-### 9. 词表库详解
-
-#### 什么是词表库？
-词表库是模型能理解的最小语义单元集合，建立人类语言与计算机数字之间的翻译桥梁。
-
-#### 词表内容
-- **基础字符**: 字母、数字、标点
-- **子词(Subwords)**: 如 `learn` + `##ing`
-- **特殊标记**: `[CLS]`, `[SEP]`, `[PAD]`, `[UNK]`
-
-#### 主流词表对比
-| 词表名称 | 代表模型 | 词表大小 | 算法 | 对中文友好度 |
-|---------|---------|---------|------|-------------|
-| Llama 3 | Llama系列 | ~128k | BPE | 极高 |
-| o200k_base | GPT-4o | ~200k | BPE | 极高 |
-| Qwen2.5 | Qwen系列 | ~151k | BPE | 顶级 |
-| Bert-Chinese | BERT | ~21k | WordPiece | 中等 |
-
----
-
-### 10. Data Collator 详解
-
-#### 什么是数据整理器？
-数据整理器负责将长短不一的句子整理成固定批次，包括填充(Padding)、对齐等操作。
-
-#### 常用类型
-| 类型 | 适用任务 | 核心功能 |
-|------|---------|---------|
-| DataCollatorWithPadding | 分类任务 | 动态填充 |
-| DataCollatorForTokenClassification | NER任务 | 填充input_ids和labels |
-| DataCollatorForSeq2Seq | 翻译/摘要 | 创建decoder_input_ids |
-| DataCollatorForLanguageModeling | MLM/CLM | 动态遮盖或偏移 |
-
-#### 标签向右移动(Shift Right)
-用于Seq2Seq任务，防止模型"抄答案"：
-
-```
-| 时间步 | 解码器输入 | 期望输出 | 解释 |
-|:---|:---|:---|:---|
-| 第1步 | <BOS> | 苹 | 预测第一个字 |
-| 第2步 | <BOS> 苹 | 果 | 预测下一个字 |
-| 第3步 | <BOS> 苹果 | <EOS> | 完成预测 |
-```
-
----
-
-### 11. Gradio 应用构建
-
-#### 基础用法
+### 6. 评估
 ```python
-import gradio as gr
-from transformers import pipeline
-
-model = pipeline("text-generation")
-
-def predict(prompt):
-    return model(prompt)[0]["generated_text"]
-
-gr.Interface(fn=predict, inputs="text", outputs="text").launch()
+import evaluate
+metric = evaluate.load("glue", "mrpc")
+predictions = trainer.predict(tokenized_datasets["validation"])
+preds = np.argmax(predictions.predictions, axis=-1)
+metric.compute(predictions=preds, references=predictions.label_ids)
 ```
 
-#### 高级功能
-- 多输入组件：Audio、Dropdown、Slider等
-- 聊天界面：Chatbot组件
-- 图像识别：Image + Label组件
-- 模型解释：interpretation功能
+### 7. 保存模型
+```python
+model.save_pretrained("./my-model")
+tokenizer.save_pretrained("./my-model")
+```
 
 ---
 
-## 三、代码实践总结
+## 六、微调后的效果
 
-### 数据集处理脚本 (s05_*.py)
-- GitHub Issues 抓取与处理
-- FAISS 语义搜索实现
-- 数据清洗与转换
+**MRPC任务效果对比：**
 
-### 分词器训练 (s06_*.py)
-- CodeSearchNet Python代码分词器训练
-- 对比新旧分词器效果
+| 数据集 | 指标 | Baseline（微调前） | 微调后 | 提升 |
+|--------|------|-------------------|--------|------|
+| Validation | Accuracy | 0.6838 | 0.8578 | +17.4% |
+| Validation | F1 | 0.8122 | 0.8990 | +8.7% |
+| Test | Accuracy | 0.6649 | 0.8458 | +18.1% |
+| Test | F1 | 0.7987 | 0.8871 | +8.8% |
 
-### 微调脚本 (s07_*.py)
-- NER任务微调（BERT + CoNLL-2003）
-- 翻译任务微调（MarianMT + KDE4）
-- 情感分类微调（DistilBERT + IMDB）
-- 问答任务微调（BERT + SQuAD）
-- 分布式训练支持（Accelerate库）
+**效果分析：**
+- Accuracy相对提升约26%，属于显著提升
+- 微调结果接近BERT-base的典型水平（84-85% accuracy）
+- 说明微调有效，模型成功学习了任务特定的模式
+
+**与基准对比：**
+
+| 模型 | Accuracy | F1 |
+|------|----------|-----|
+| 原始BERT（未微调） | ~60-70% | ~75-80% |
+| 微调后BERT-base | 84-85% | 88-89% |
+| 更强模型（RoBERTa等） | ~90% | ~92% |
+| 人类水平 | ~90% | ~92% |
 
 ---
 
-## 四、学习要点总结
+## 七、Embedding 语义向量
 
-### 核心流程
+### 1. 什么是 Embedding？
+
+**定义：** Embedding 是将文本转换为高维向量（数值数组）的过程，使得语义相似的文本在向量空间中距离更近。
+
 ```
-1. 理解任务需求 → 选择合适架构
-2. 准备数据集 → 分词处理 → 标签对齐
-3. 选择预训练模型 → 配置任务头
-4. 微调训练 → 评估优化
-5. 部署应用 → Gradio/HuggingFace Hub
+"How to load dataset" → [0.12, -0.34, 0.56, ..., 0.78]  (768维向量)
+"I want to download data" → [0.15, -0.30, 0.52, ..., 0.75]  (语义相似，向量相近)
+"The weather is nice" → [0.89, 0.12, -0.45, ..., -0.23]  (语义不同，向量距离远)
 ```
 
-### 关键决策点
-| 场景 | 建议 |
+**通俗理解：**
+- Embedding = 把文字翻译成数字坐标
+- 语义相似的两个句子，坐标位置相近
+- 通过向量距离就能判断语义相似度
+
+---
+
+## 八、RAG 检索增强生成
+
+### 1. 什么是 RAG？
+
+**定义：** RAG（Retrieval-Augmented Generation） = 检索 + 生成
+
+**核心流程：**
+
+```
+用户问题 → Embedding → 向量检索 → 获取相关文档 → 拼接到Prompt → LLM生成回答
+```
+
+**为什么需要 RAG？**
+
+| 问题 | RAG 解决方案 |
+|------|-------------|
+| LLM知识过时 | 实时检索最新文档 |
+| LLM会编造答案 | 基于真实文档回答 |
+| 私有数据无法训练 | 检索私有知识库 |
+
+### 2. RAG 完整流程
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      RAG 架构                                │
+└─────────────────────────────────────────────────────────────┘
+
+【阶段一：知识库构建】
+
+  文档 → 分块 → Embedding → 存入向量数据库(FAISS)
+  
+     ┌────────────┐
+     │  原始文档   │
+     │  (10000字)  │
+     └───┬────────┘
+         │ 分块
+         ▼
+     ┌────────────┐
+     │  Chunk 1   │ → Embedding → 存入FAISS
+     │  Chunk 2   │ → Embedding → 存入FAISS
+     │  Chunk 3   │ → Embedding → 存入FAISS
+     └────────────┘
+
+【阶段二：查询】
+
+  问题 → Embedding → FAISS相似度搜索 → Top-K相关文档
+  
+     ┌────────────┐
+     │  用户问题   │
+     │  "如何..."  │
+     └───┬────────┘
+         │ Embedding
+         ▼
+     ┌────────────┐
+     │  查询向量   │
+     │  [0.12,...] │
+     └───┬────────┘
+         │ FAISS搜索
+         ▼
+     ┌────────────┐
+     │  相关文档   │
+     │  Top-K=5   │
+     └────────────┘
+
+【阶段三：生成】
+
+  问题 + 相关文档 → Prompt → LLM → 回答
+  
+     ┌─────────────────────────────────┐
+     │  Prompt:                         │
+     │  问题：如何加载离线数据集？        │
+     │  参考资料：                       │
+     │  - 文档1: 使用load_dataset()...   │
+     │  - 文档2: 支持CSV/JSON格式...      │
+     │  请基于参考资料回答：              │
+     └────────────┴────────────────────┘
+                    ↓
+              ┌──────────┐
+              │    LLM   │
+              └──────────┘
+                    ↓
+              ┌──────────┐
+              │  回答     │
+              └──────────┘
+```
+
+### 3. Embedding 搜索 vs 关键词搜索
+
+| 对比项 | 关键词搜索 | Embedding 语义搜索 |
+|--------|-----------|-------------------|
+| "如何下载模型" | 匹配不到"离线加载" | 能匹配（语义相似） |
+| "报错了怎么办" | 匹配不到具体错误 | 能找到解决方案 |
+| 精确度 | 精确匹配 | 语义理解 |
+| 适用场景 | 明确关键词 | 自然语言问答 |
+
+---
+
+## 九、Agentic RAG（智能检索）
+
+### 传统 RAG vs Agentic RAG
+
+```
+【传统 RAG - 被动检索】
+用户问题 → 固定流程检索 → 拼接文档 → LLM生成
+特点：检索是前置的、固定的、模型被动接收
+
+【Agentic RAG - 主动检索】
+用户问题 → LLM分析 → LLM决定是否检索 →
+LLM调用检索工具 → LLM分析结果 → 可能再检索 → LLM总结
+特点：检索由模型主动决策、可迭代、可多轮
+```
+
+### Agentic RAG 的优势
+
+| 优势 | 说明 |
 |------|------|
-| 通用任务 | 直接用预训练模型 |
-| 专业领域 | 先领域适配，再任务微调 |
-| 大数据集 | 使用Streaming + Memory Mapping |
-| 分布式训练 | 使用Accelerate库 |
+| 智能判断 | 模型自己判断是否需要检索（"你好"不需要检索） |
+| 动态查询 | 模型可以优化查询词 |
+| 迭代检索 | 第一次不满意，可以调整策略再检索 |
+| 多源检索 | 可以调用多个不同的知识库 |
+| 上下文理解 | 根据对话历史决定检索什么 |
 
-### 常见问题解决
-- **稀有Token问题**：领域适配微调
-- **长文本处理**：滑动窗口 + stride
-- **子词对齐**：使用word_ids() + -100屏蔽
-- **内存不足**：Streaming模式 + batched处理
+### 流程示例
+
+```
+用户："HuggingFace datasets 如何处理大数据？"
+    ↓
+LLM分析："需要检索知识库"
+    ↓
+LLM调用：search("datasets large data memory mapping", k=5)
+    ↓
+工具返回：5条相关文档
+    ↓
+LLM分析："提到了memory mapping，但不够详细，再检索"
+    ↓
+LLM调用：search("Apache Arrow lazy loading", k=3)
+    ↓
+工具返回：3条补充文档
+    ↓
+LLM总结：综合所有文档生成回答
+```
 
 ---
 
-## 五、参考资源
+## 全文关键要点总结
+
+### Transformer 与 NLP 基础
+1. **Transformer核心**：自注意力机制，让每个词都能看到其他所有词
+2. **BERT vs GPT**：BERT双向理解（分类、问答），GPT单向生成（写作、对话）
+3. **四大NLP任务**：文本分类、序列标注、文本生成、问答抽取
+
+### 微调核心流程
+1. **微调必要性**：预训练模型需要任务适配才能发挥作用
+2. **核心流程**：数据准备 → 预处理 → 训练 → 评估 → 保存
+3. **关键技术**：动态填充、AdamW优化器、学习率调度
+4. **效果显著**：3个epoch即可达到BERT-base典型水平
+
+### Embedding 与 RAG
+1. **Embedding本质**：把文本翻译成数字坐标，语义相似的坐标相近
+2. **维度由模型决定**：BERT-base是768维，越大模型维度越高
+3. **RAG流程**：知识库构建 → 查询检索 → Prompt拼接 → LLM生成
+4. **语义搜索优势**：能理解用户意图，比关键词搜索更智能
+5. **Agentic RAG**：让模型主动决定是否检索、如何检索
+6. **文档过长方案**：分块是最常用的解决方案
+
+
+## 参考资源
 
 - [HuggingFace LLM 课程中文版](https://huggingface.co/learn/llm-course/zh-CN/chapter0/1)
 - [Transformers 文档](https://huggingface.co/docs/transformers)
@@ -508,5 +737,3 @@ gr.Interface(fn=predict, inputs="text", outputs="text").launch()
 - [Accelerate 文档](https://huggingface.co/docs/accelerate)
 
 ---
-
-*本总结基于 HuggingFace 官方 LLM 课程学习笔记整理，涵盖理论原理与实践代码。*
