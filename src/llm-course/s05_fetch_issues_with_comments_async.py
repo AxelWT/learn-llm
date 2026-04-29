@@ -93,7 +93,7 @@ async def main():
     # 保存一份到本地，防止网络断开，上传不了时数据丢失
     issues_with_comments_dataset.save_to_disk("issues-with-comments-dataset")
     # 保存到 hub
-    issues_with_comments_dataset.push_to_hub(repo_id="axelloo/github-issues",
+    issues_with_comments_dataset.push_to_hub(repo_id="<account>/<repo-id>",
                                              commit_message="huggingface/datasets repository issues and comments")
 
     return issues_with_comments_dataset
