@@ -28,9 +28,9 @@ Harness = Tools + Knowledge + Observation + Action Interfaces + Permissions
 
 **模型做决策，Harness 执行。模型做推理，Harness 提供上下文。模型是驾驶者，Harness 是载具。**
 
-### 1.3 Claude Code 的教学价值
+### 1.3 Claude Code 介绍
 
-Claude Code 是最优雅、最完整的 agent harness 实现：
+Claude Code 是一种 agent harness 实现：
 
 ```
 Claude Code = 一个 agent loop
@@ -44,11 +44,9 @@ Claude Code = 一个 agent loop
             + 权限治理
 ```
 
-它展示了当你信任模型、把工程精力集中在 harness 上时会发生什么。
-
 ---
 
-## 二、12 递进式课程详解
+## 二、递进式课程详解
 
 ### 第一阶段：循环基础
 
@@ -58,17 +56,45 @@ Claude Code = 一个 agent loop
 
 **核心模式**：一个退出条件控制的 while 循环，持续运行直到模型不再调用工具。
 
-```python
-def agent_loop(messages):
-    while True:
-        response = client.messages.create(model=MODEL, messages=messages, tools=TOOLS)
-        messages.append({"role": "assistant", "content": response.content})
-        if response.stop_reason != "tool_use":
-            return
-        # 执行工具，收集结果，追加到 messages
+- **模拟流程图**
+
+```
++--------+      +-------+      +---------+
+|  User  | ---> |  LLM  | ---> |  Tool   |
+| prompt |      |       |      | execute |
++--------+      +---+---+      +----+----+
+                    ^                |
+                    |   tool_result  |
+                    +----------------+
+                    (loop until stop_reason != "tool_use")
 ```
 
-**关键洞察**：不到 30 行代码就是整个 Agent。后面 11 个章节都在这个循环上叠加机制——循环本身始终不变。
+- **代码示例**
+
+```python
+def agent_loop(query):
+    messages = [{"role": "user", "content": query}]
+    while True:
+        response = client.messages.create(
+            model=MODEL, system=SYSTEM, messages=messages,
+            tools=TOOLS, max_tokens=8000,
+        )
+        messages.append({"role": "assistant", "content": response.content})
+
+        if response.stop_reason != "tool_use":
+            return
+
+        results = []
+        for block in response.content:
+            if block.type == "tool_use":
+                output = run_bash(block.input["command"])
+                results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": output,
+                })
+        messages.append({"role": "user", "content": results})
+```
 
 ---
 
@@ -78,13 +104,55 @@ def agent_loop(messages):
 
 **核心模式**：使用字典映射工具名到处理函数，实现工具分发。
 
+- **模拟流程图**
+
+```
++--------+      +-------+      +------------------+
+|  User  | ---> |  LLM  | ---> | Tool Dispatch    |
+| prompt |      |       |      | {                |
++--------+      +---+---+      |   bash: run_bash |
+                    ^           |   read: run_read |
+                    |           |   write: run_wr  |
+                    +-----------+   edit: run_edit |
+                    tool_result | }                |
+                                +------------------+
+
+The dispatch map is a dict: {tool_name: handler_function}.
+One lookup replaces any if/elif chain.
+```
+
 ```python
+def safe_path(p: str) -> Path:
+    path = (WORKDIR / p).resolve()
+    if not path.is_relative_to(WORKDIR):
+        raise ValueError(f"Path escapes workspace: {p}")
+    return path
+
 TOOL_HANDLERS = {
     "bash":       lambda **kw: run_bash(kw["command"]),
     "read_file":  lambda **kw: run_read(kw["path"]),
     "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
     "edit_file":  lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
 }
+
+def agent_loop(messages: list):
+    while True:
+        response = client.messages.create(
+            model=MODEL, system=SYSTEM, messages=messages,
+            tools=TOOLS, max_tokens=8000,
+        )
+        messages.append({"role": "assistant", "content": response.content})
+        if response.stop_reason != "tool_use":
+            return
+        results = []
+        for block in response.content:
+            if block.type == "tool_use":
+                handler = TOOL_HANDLERS.get(block.name)
+                output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
+                print(f"> {block.name}:")
+                print(output[:200])
+                results.append({"type": "tool_result", "tool_use_id": block.id, "content": output})
+        messages.append({"role": "user", "content": results})
 ```
 
 **新增组件**：
@@ -100,21 +168,124 @@ TOOL_HANDLERS = {
 
 > *"没有计划的 agent 走哪算哪"* — 先列步骤再动手，完成率翻倍
 
+- **模拟流程图**
+
+```
++--------+      +-------+      +---------+
+|  User  | ---> |  LLM  | ---> | Tools   |
+| prompt |      |       |      | + todo  |
++--------+      +---+---+      +----+----+
+                    ^                |
+                    |   tool_result  |
+                    +----------------+
+                          |
+              +-----------+-----------+
+              | TodoManager state     |
+              | [ ] task A            |
+              | [>] task B  <- doing  |
+              | [x] task C            |
+              +-----------------------+
+                          |
+              if rounds_since_todo >= 3:
+                inject <reminder> into tool_result
+```
+
 **核心机制**：
 - `TodoManager` 存储带状态的项目，同一时间只允许一个 `in_progress`
 - "同时只能有一个 in_progress" 强制顺序聚焦
 - **Nag Reminder**：模型连续 3 轮不调用 `todo` 时注入提醒，制造问责压力
 
 ```python
-if rounds_since_todo >= 3 and messages:
-    last["content"].insert(0, {"type": "text", "text": "<reminder>Update your todos.</reminder>"})
+# -- TodoManager: structured state the LLM writes to --
+class TodoManager:
+    def __init__(self):
+        self.items = []
+
+    def update(self, items: list) -> str:
+        if len(items) > 20:
+            raise ValueError("Max 20 todos allowed")
+        validated = []
+        in_progress_count = 0
+        for i, item in enumerate(items):
+            text = str(item.get("text", "")).strip()
+            status = str(item.get("status", "pending")).lower()
+            item_id = str(item.get("id", str(i + 1)))
+            if not text:
+                raise ValueError(f"Item {item_id}: text required")
+            if status not in ("pending", "in_progress", "completed"):
+                raise ValueError(f"Item {item_id}: invalid status '{status}'")
+            if status == "in_progress":
+                in_progress_count += 1
+            validated.append({"id": item_id, "text": text, "status": status})
+        if in_progress_count > 1:
+            raise ValueError("Only one task can be in_progress at a time")
+        self.items = validated
+        return self.render()
+
+    def render(self) -> str:
+        if not self.items:
+            return "No todos."
+        lines = []
+        for item in self.items:
+            marker = {"pending": "[ ]", "in_progress": "[>]", "completed": "[x]"}[item["status"]]
+            lines.append(f"{marker} #{item['id']}: {item['text']}")
+        done = sum(1 for t in self.items if t["status"] == "completed")
+        lines.append(f"\n({done}/{len(self.items)} completed)")
+        return "\n".join(lines)
+
+# -- Agent loop with nag reminder injection --
+def agent_loop(messages: list):
+    rounds_since_todo = 0
+    while True:
+        # Nag reminder is injected below, alongside tool results
+        response = client.messages.create(
+            model=MODEL, system=SYSTEM, messages=messages,
+            tools=TOOLS, max_tokens=8000,
+        )
+        messages.append({"role": "assistant", "content": response.content})
+        if response.stop_reason != "tool_use":
+            return
+        results = []
+        used_todo = False
+        for block in response.content:
+            if block.type == "tool_use":
+                handler = TOOL_HANDLERS.get(block.name)
+                try:
+                    output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
+                except Exception as e:
+                    output = f"Error: {e}"
+                print(f"> {block.name}:")
+                print(str(output)[:200])
+                results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
+                if block.name == "todo":
+                    used_todo = True
+        rounds_since_todo = 0 if used_todo else rounds_since_todo + 1
+        if rounds_since_todo >= 3:
+            results.append({"type": "text", "text": "<reminder>Update your todos.</reminder>"})
+        messages.append({"role": "user", "content": results})
 ```
 
 ---
 
-#### **s04: Subagents（Subagent）**
+#### **s04: Subagent（子 Agent 调度）**
 
 > *"大任务拆小，每个个小任务干净的上下文"* — Subagent 用独立 messages[]，不污染主对话
+
+- **模拟流程图**
+
+```
+Parent agent                     Subagent
++------------------+             +------------------+
+| messages=[...]   |             | messages=[]      | <-- fresh
+|                  |  dispatch   |                  |
+| tool: task       | ----------> | while tool_use:  |
+|   prompt="..."   |             |   call tools     |
+|                  |  summary    |   append results |
+|   result = "..." | <---------- | return last text |
++------------------+             +------------------+
+
+Parent context stays clean. Subagent context is discarded.
+```
 
 **核心机制**：
 - 父 Agent 有 `task` 工具派发子任务
@@ -123,6 +294,54 @@ if rounds_since_todo >= 3 and messages:
 - 整个消息历史直接丢弃，父 Agent 只收到摘要文本
 
 **解决的问题**：Agent 工作越久，messages 数组越臃肿。Subagent 可能跑了 30+ 次工具调用，但父 Agent 只需要一个词："pytest"。
+
+```python
+# -- Subagent: fresh context, filtered tools, summary-only return --
+def run_subagent(prompt: str) -> str:
+    sub_messages = [{"role": "user", "content": prompt}]  # fresh context
+    for _ in range(30):  # safety limit
+        response = client.messages.create(
+            model=MODEL, system=SUBAGENT_SYSTEM, messages=sub_messages,
+            tools=CHILD_TOOLS, max_tokens=8000,
+        )
+        sub_messages.append({"role": "assistant", "content": response.content})
+        if response.stop_reason != "tool_use":
+            break
+        results = []
+        for block in response.content:
+            if block.type == "tool_use":
+                handler = TOOL_HANDLERS.get(block.name)
+                output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
+                results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)[:50000]})
+        sub_messages.append({"role": "user", "content": results})
+    # Only the final text returns to the parent -- child context is discarded
+    return "".join(b.text for b in response.content if hasattr(b, "text")) or "(no summary)"
+
+
+def agent_loop(messages: list):
+    while True:
+        response = client.messages.create(
+            model=MODEL, system=SYSTEM, messages=messages,
+            tools=PARENT_TOOLS, max_tokens=8000,
+        )
+        messages.append({"role": "assistant", "content": response.content})
+        if response.stop_reason != "tool_use":
+            return
+        results = []
+        for block in response.content:
+            if block.type == "tool_use":
+                if block.name == "task":
+                    desc = block.input.get("description", "subtask")
+                    prompt = block.input.get("prompt", "")
+                    print(f"> task ({desc}): {prompt[:80]}")
+                    output = run_subagent(prompt)
+                else:
+                    handler = TOOL_HANDLERS.get(block.name)
+                    output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
+                print(f"  {str(output)[:200]}")
+                results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
+        messages.append({"role": "user", "content": results})
+```
 
 ---
 
