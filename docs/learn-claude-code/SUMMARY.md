@@ -711,12 +711,47 @@ def agent_loop(messages: list):
 **通信机制**：JSONL 收件箱（append-only，drain-on-read）
 
 ```
-.team/
-  config.json           <- 团队名册 + 状态
-  inbox/
-    alice.jsonl         <- append-only
-    bob.jsonl
-    lead.jsonl
+"""
+持久化的命名 agent，通过基于文件的 JSONL 收件箱进行通信。
+每个队友在独立线程中运行自己的 agent loop。通过追加写收件箱文件实现通信。
+
+    Subagent (s04):  生成 -> 执行 -> 返回摘要 -> 销毁
+    Teammate (s09):  生成 -> 工作 -> 空闲 -> 工作 -> ... -> 关停
+
+    数据模型：
+    .team/config.json                   .team/inbox/
+    +----------------------------+      +------------------+
+    | {"team_name": "default",   |      | alice.jsonl      |  <- Alice 的收件箱
+    |  "members": [              |      | bob.jsonl        |  <- Bob 的收件箱
+    |    {"name":"alice",        |      | lead.jsonl       |  <- 主控的收件箱
+    |     "role":"coder",        |      +------------------+
+    |     "status":"idle"}       |
+    |  ]}                        |      send_message("alice", "fix bug"):
+    +----------------------------+        实际上就是 open("alice.jsonl", "a").write(msg)
+
+    生成队友 spawn_teammate         read_inbox("alice"):
+    ("alice","coder",...)            messages = [json.loads(line) for line in ...]
+         |                           open("alice.jsonl", "w").close()  ← 读后清空
+         v                           return messages  (一次性消费/排空)
+    线程: alice             线程: bob
+    +------------------+    +------------------+
+    | agent_loop       |    | agent_loop       |
+    | status: working  |    | status: idle     |
+    | ... 执行工具 ...  |    | ... 等待消息 ...  |
+    | status -> idle   |    |                  |
+    +------------------+    +------------------+
+
+    5 种消息类型（全部声明，此处未全部处理）：
+    +-------------------------+-----------------------------------+
+    | message                 | 普通文本消息                       |
+    | broadcast               | 发送给所有队友                    |
+    | shutdown_request        | 请求优雅关停 (s10)                 |
+    | shutdown_response       | 批准/拒绝关停请求 (s10)            |
+    | plan_approval_response  | 批准/拒绝计划 (s10)                |
+    +-------------------------+-----------------------------------+
+
+    核心洞察："能够互相通信的队友。"
+"""
 ```
 
 ---
@@ -743,12 +778,66 @@ def agent_loop(messages: list):
 **队友生命周期**：
 
 ```
-spawn -> WORKING -> IDLE -> WORKING -> ... -> SHUTDOWN
+"""
+本模块的核心思想是：Agent 不再被动等待指令，而是像真正的团队成员一样，
+在工作完成后主动寻找下一个待办任务。这实现了从"工具型 Agent"到"自主型 Agent"的跨越。
 
-IDLE 阶段：
-  +---> check inbox --> message? --> WORK
-  +---> scan .tasks/ --> unclaimed? --> claim -> WORK
-  +---> 60s timeout --> SHUTDOWN
+架构总览：
+┌─────────────────────────────────────────────────────────────┐
+│                         Lead Agent                          │
+│  (主循环, 可创建/管理 Teammate, 审批计划, 处理收件箱)         │
+└──────────┬──────────────────────────────────────┬───────────┘
+           │  spawn_teammate                       │ 消息/广播
+           ▼                                       ▼
+┌──────────────────────┐              ┌──────────────────────────┐
+│   Teammate "coder"   │              │    MessageBus (JSONL)     │
+│   ┌───────────────┐  │              │   .team/inbox/{name}.jsonl│
+│   │  WORK 阶段     │  │              └──────────────────────────┘
+│   │  (LLM 推理)    │  │
+│   └───┬───────────┘  │              ┌──────────────────────────┐
+│       │ stop_reason  │              │   Task Board              │
+│       │ != tool_use  │              │   .tasks/task_*.json      │
+│       ▼              │              │   状态: pending/in_progress│
+│   ┌───────────────┐  │              └──────────────────────────┘
+│   │  IDLE 阶段     │──┼─── 每5秒轮询 ──▶ 扫描未认领任务
+│   │  (轮询等待)    │  │
+│   └───┬───────────┘  │
+│       │ 超时 60s     │
+│       ▼              │
+│   ┌───────────────┐  │
+│   │  SHUTDOWN      │  │
+│   └───────────────┘  │
+└──────────────────────┘
+
+Teammate 生命周期（状态机）：
+    +-------+
+    | spawn |  创建并启动
+    +---+---+
+        |
+        v
+    +-------+  tool_use 不断循环    +-------+
+    | WORK  | <-------------------- |  LLM  |  LLM 推理 & 工具调用
+    +---+---+                       +-------+
+        |
+        | stop_reason != tool_use (模型认为工作完成, 调用 idle 工具)
+        v
+    +--------+
+    | IDLE   | 每 5 秒轮询一次, 最长等待 60 秒
+    +---+----+
+        |
+        +---> 检查收件箱 → 有新消息? → 恢复 WORK
+        |
+        +---> 扫描 .tasks/ → 有未认领任务? → 自动认领 → 恢复 WORK
+        |
+        +---> 超时 (60s) → shutdown（关闭）
+
+上下文压缩后的身份重注入（Identity Re-injection）：
+    当消息历史过长被压缩后，通过在最前面插入身份块来保持 Agent 的自我认知：
+    messages = [identity_block, ...remaining...]
+    身份块内容: "你是 'coder'，角色: 后端开发，团队: my-team"
+
+核心设计理念（Key insight）："Agent 自己找活干。"
+"""
 ```
 
 **身份重注入**：Context Compact 后 Agent 可能忘了自己是谁，通过在 messages 开头插入身份块解决。
@@ -762,23 +851,118 @@ IDLE 阶段：
 **双平面架构**：
 
 ```
-控制平面 (.tasks/)              执行平面 (.worktrees/)
-task_1.json                     auth-refactor/
-  status: in_progress <->       branch: wt/auth-refactor
-  worktree: "auth-refactor"     task_id: 1
+"""
+通过目录级别的隔离实现并行任务执行。
+任务是"控制面"（control plane），worktree 是"执行面"（execution plane）。
 
-事件流：events.jsonl（生命周期日志）
+核心理念（Key insight）："用目录隔离，用任务 ID 协调。"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+架构总览
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                        控制面（Control Plane）                     │
+    │                                                                   │
+    │   .tasks/task_12.json           .worktrees/index.json             │
+    │   ┌──────────────────────┐      ┌───────────────────────────┐    │
+    │   │ {                    │      │ {                         │    │
+    │   │   "id": 12,          │      │   "worktrees": [          │    │
+    │   │   "subject": "...",  │◄────►│     {                     │    │
+    │   │   "status": "...",   │ 绑定  │       "name": "...",      │    │
+    │   │   "worktree": "...", │      │       "path": "...",      │    │
+    │   │   "owner": "...",    │      │       "branch": "...",    │    │
+    │   │   "blockedBy": [...] │      │       "task_id": 12,      │    │
+    │   │ }                    │      │       "status": "active"  │    │
+    │   └──────────────────────┘      │     }                     │    │
+    │                                  │   ]                       │    │
+    │   .worktrees/events.jsonl       │ }                         │    │
+    │   ┌──────────────────────┐      └───────────────────────────┘    │
+    │   │ 生命周期事件流         │                                       │
+    │   │ (追加写入, 可观测)     │                                       │
+    │   └──────────────────────┘                                       │
+    └─────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ 创建/绑定
+                                    ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                        执行面（Execution Plane）                   │
+    │                                                                   │
+    │   主仓库 (REPO_ROOT)                                              │
+    │   ├── src/                                                        │
+    │   ├── .worktrees/                                                 │
+    │   │   ├── auth-refactor/    ← git worktree, 独立分支               │
+    │   │   ├── fix-login/        ← git worktree, 独立分支               │
+    │   │   └── index.json                                              │
+    │   └── .tasks/                                                     │
+    │                                                                   │
+    │   每个 worktree 是一个独立的 git 工作目录，拥有自己的分支。         │
+    │   不同 worktree 中的操作互不干扰，天然隔离。                        │
+    └─────────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+任务与 Worktree 的绑定关系
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    .tasks/task_12.json                   .worktrees/index.json
+    {                                     {
+      "id": 12,                             "worktrees": [
+      "subject": "实现认证重构",              {
+      "status": "in_progress",     ───►       "name": "auth-refactor",
+      "worktree": "auth-refactor",  ◄───       "path": ".../auth-refactor",
+      "owner": "coder"                         "branch": "wt/auth-refactor",
+    }                                           "task_id": 12,
+                                                "status": "active"
+                                              }
+                                            ]
+                                          }
+
+    双向关联:
+    - task.worktree → 指向关联的 worktree 名称
+    - worktree.task_id → 指向关联的任务 ID
+    - 完成任务时可同时删除 worktree 并标记任务完成
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Worktree 生命周期
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    create(name, task_id, base_ref)
+      │
+      │  git worktree add -b wt/{name} {path} {base_ref}
+      │  写入 index.json (status: "active")
+      │  绑定 task.worktree
+      ▼
+    ┌─────────┐
+    │ active  │  ← 正常使用中，可执行 run(name, command)
+    └────┬────┘
+         │
+         ├──► remove(name, force, complete_task)
+         │      │
+         │      │  git worktree remove {path}
+         │      │  更新 index.json (status: "removed")
+         │      │  可选: 标记关联任务为 completed
+         │      ▼
+         │    removed
+         │
+         └──► keep(name)
+                │
+                │  不删除目录，仅在 index.json 中标记
+                ▼
+              kept
+
+    events.jsonl 记录完整生命周期事件:
+      worktree.create.before → worktree.create.after
+      worktree.remove.before → worktree.remove.after
+      worktree.create.failed / worktree.remove.failed
+      worktree.keep / task.completed
+"""
 ```
 
 **解决的问题**：两个 Agent 同时重构不同模块，未提交的改动互相污染，谁也没法干净回滚。
 
 ---
 
-## 三、代码实现结构
-
----
-
-## 四、学习路径图
+## 三、学习路径图
 
 ```
 第一阶段: 循环                       第二阶段: 规划与知识
