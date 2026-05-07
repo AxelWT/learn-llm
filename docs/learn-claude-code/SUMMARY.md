@@ -4,6 +4,33 @@
 
 ---
 
+## 目录
+
+- [一、核心理念：模型即 Agent](#一核心理念模型即-agent)
+  - [1.1 Agent 的本质定义](#11-agent-的本质定义)
+  - [1.2 Harness 工程师的使命](#12-harness-工程师的使命)
+  - [1.3 Claude Code 介绍](#13-claude-code-介绍)
+- [二、递进式课程详解](#二递进式课程详解)
+  - [第一阶段：循环基础](#第一阶段循环基础)
+    - [s01: Agent Loop（Agent 循环）](#s01-agent-loopagent-循环)
+    - [s02: Tool Use（工具使用）](#s02-tool-use工具使用)
+  - [第二阶段：规划与知识](#第二阶段规划与知识)
+    - [s03: TodoWrite（待办写入）](#s03-todowrite待办写入)
+    - [s04: Subagent（子 Agent 调度）](#s04-subagent子-agent-调度)
+    - [s05: Skill Loading（Skill 加载）](#s05-skill-loadingskill-加载)
+    - [s06: Context Compact（上下文压缩）](#s06-context-compact上下文压缩)
+  - [第三阶段：持久化](#第三阶段持久化)
+    - [s07: Task System（任务系统）](#s07-task-system任务系统)
+    - [s08: Background Tasks（后台任务）](#s08-background-tasks后台任务)
+  - [第四阶段：团队协作](#第四阶段团队协作)
+    - [s09: Agent Teams（Agent 团队）](#s09-agent-teamsagent-团队)
+    - [s10: Team Protocols（团队协议）](#s10-team-protocols团队协议)
+    - [s11: Autonomous Agents（自治 Agent）](#s11-autonomous-agents自治-agent)
+    - [s12: Worktree + Task Isolation（Worktree 任务隔离）](#s12-worktree--task-isolationworktree-任务隔离)
+- [三、学习路径图](#三学习路径图)
+
+---
+
 ## 一、核心理念：模型即 Agent
 
 ### 1.1 Agent 的本质定义
