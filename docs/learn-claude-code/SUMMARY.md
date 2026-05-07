@@ -10,7 +10,9 @@
 
 本项目的核心观点：**Agent 是模型，不是框架，不是提示词链，不是拖拽式工作流。**
 
-Agent 是一个神经网络（Transformer、RNN 等），通过数十亿次梯度更新，在行动序列数据上学会了感知环境、推理目标、采取行动。从 DeepMind DQN 玩 Atari（2013）到 OpenAI Five 征服 Dota 2（2019），再到腾讯绝悟统治王者荣耀（2019），每一个里程碑都证明：Agent 永远是模型本身。
+Agent 是一个神经网络（Transformer、RNN 等），通过数十亿次梯度更新，在行动序列数据上学会了感知环境、推理目标、采取行动。从
+DeepMind DQN 玩 Atari（2013）到 OpenAI Five 征服 Dota 2（2019），再到腾讯绝悟统治王者荣耀（2019），每一个里程碑都证明：Agent
+永远是模型本身。
 
 ### 1.2 Harness 工程师的使命
 
@@ -128,12 +130,14 @@ def safe_path(p: str) -> Path:
         raise ValueError(f"Path escapes workspace: {p}")
     return path
 
+
 TOOL_HANDLERS = {
-    "bash":       lambda **kw: run_bash(kw["command"]),
-    "read_file":  lambda **kw: run_read(kw["path"]),
+    "bash": lambda **kw: run_bash(kw["command"]),
+    "read_file": lambda **kw: run_read(kw["path"]),
     "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
-    "edit_file":  lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
+    "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
 }
+
 
 def agent_loop(messages: list):
     while True:
@@ -156,6 +160,7 @@ def agent_loop(messages: list):
 ```
 
 **新增组件**：
+
 - `safe_path()` 路径沙箱防止逃逸工作区
 - 专用工具替代全部走 shell 的方式
 - 加工具 = 加 handler + 加 schema，循环永远不变
@@ -191,6 +196,7 @@ def agent_loop(messages: list):
 ```
 
 **核心机制**：
+
 - `TodoManager` 存储带状态的项目，同一时间只允许一个 `in_progress`
 - "同时只能有一个 in_progress" 强制顺序聚焦
 - **Nag Reminder**：模型连续 3 轮不调用 `todo` 时注入提醒，制造问责压力
@@ -232,6 +238,7 @@ class TodoManager:
         done = sum(1 for t in self.items if t["status"] == "completed")
         lines.append(f"\n({done}/{len(self.items)} completed)")
         return "\n".join(lines)
+
 
 # -- Agent loop with nag reminder injection --
 def agent_loop(messages: list):
@@ -288,6 +295,7 @@ Parent context stays clean. Subagent context is discarded.
 ```
 
 **核心机制**：
+
 - 父 Agent 有 `task` 工具派发子任务
 - Subagent 以 `messages=[]` 启动，拥有除 `task` 外的所有基础工具（禁止递归生成）
 - Subagent 运行自己的循环，只有最终文本返回给父 Agent
@@ -349,15 +357,61 @@ def agent_loop(messages: list):
 
 > *"用到什么知识，临时加载什么知识"* — 通过 tool_result 注入，不塞 system prompt
 
+- **模拟流程图**
+
+```
+System prompt (Layer 1 -- always present):
++--------------------------------------+
+| You are a coding agent.              |
+| Skills available:                    |
+|   - git: Git workflow helpers        |  ~100 tokens/skill
+|   - test: Testing best practices     |
++--------------------------------------+
+
+When model calls load_skill("git"):
++--------------------------------------+
+| tool_result (Layer 2 -- on demand):  |
+| <skill name="git">                   |
+|   Full git workflow instructions...  |  ~2000 tokens
+|   Step 1: ...                        |
+| </skill>                             |
++--------------------------------------+
+```
+
 **两层加载策略**：
+
 - **第一层（系统提示）**：放 Skill 名称（低成本，约 100 tokens/skill）
 - **第二层（tool_result）**：按需放完整内容（约 2000 tokens）
 
 ```python
 # 每个 Skill 是一个目录，包含 SKILL.md 文件和 YAML frontmatter
-skills/
-  pdf/SKILL.md       # ---\n name: pdf\n description: Process PDF files\n ---\n ...
-  code-review/SKILL.md
+skills /
+pdf / SKILL.md  # ---\n name: pdf\n description: Process PDF files\n ---\n ...
+code - review / SKILL.md
+
+
+# SkillLoader 递归扫描 `SKILL.md` 文件, 用目录名作为 Skill 标识。
+class SkillLoader:
+    def __init__(self, skills_dir: Path):
+        self.skills = {}
+        for f in sorted(skills_dir.rglob("SKILL.md")):
+            text = f.read_text()
+            meta, body = self._parse_frontmatter(text)
+            name = meta.get("name", f.parent.name)
+            self.skills[name] = {"meta": meta, "body": body}
+
+    def get_descriptions(self) -> str:
+        lines = []
+        for name, skill in self.skills.items():
+            desc = skill["meta"].get("description", "")
+            lines.append(f"  - {name}: {desc}")
+        return "\n".join(lines)
+
+    def get_content(self, name: str) -> str:
+        skill = self.skills.get(name)
+        if not skill:
+            return f"Error: Unknown skill '{name}'."
+        return f"<skill name=\"{name}\">\n{skill['body']}\n</skill>"
 ```
 
 ---
@@ -366,15 +420,57 @@ skills/
 
 > *"上下文总会满，要有办法腾地方"* — 三层压缩策略，换来无限会话
 
+- **模拟流程图**
+
+```
+Every turn:
++------------------+
+| Tool call result |
++------------------+
+        |
+        v
+[Layer 1: micro_compact]        (silent, every turn)
+  Replace tool_result > 3 turns old
+  with "[Previous: used {tool_name}]"
+        |
+        v
+[Check: tokens > 50000?]
+   |               |
+   no              yes
+   |               |
+   v               v
+continue    [Layer 2: auto_compact]
+              Save transcript to .transcripts/
+              LLM summarizes conversation.
+              Replace all messages with [summary].
+                    |
+                    v
+            [Layer 3: compact tool]
+              Model calls compact explicitly.
+              Same summarization as auto_compact.
+```
+
 **三层压缩机制**：
 
-| 层级 | 名称 | 触发条件 | 动作 |
-|------|------|----------|------|
-| 1 | micro_compact | 每轮静默执行 | 旧 tool result (>3轮) → 占位符 |
-| 2 | auto_compact | token > 50000 | 保存 transcript 到磁盘，LLM 摘要 |
-| 3 | manual compact | 模型调用 compact 工具 | 同 auto_compact |
+| 层级 | 名称             | 触发条件            | 动作                        |
+|----|----------------|-----------------|---------------------------|
+| 1  | micro_compact  | 每轮静默执行          | 旧 tool result (>3轮) → 占位符 |
+| 2  | auto_compact   | token > 50000   | 保存 transcript 到磁盘，LLM 摘要  |
+| 3  | manual compact | 模型调用 compact 工具 | 同 auto_compact            |
 
 **关键洞察**：完整历史通过 transcript 保存在磁盘上。信息没有真正丢失，只是移出了活跃上下文。
+
+```python
+def agent_loop(messages: list):
+    while True:
+        micro_compact(messages)  # Layer 1
+        if estimate_tokens(messages) > THRESHOLD:
+            messages[:] = auto_compact(messages)  # Layer 2
+        response = client.messages.create(...)
+        # ... tool execution ...
+        if manual_compact:
+            messages[:] = auto_compact(messages)  # Layer 3
+```
 
 ---
 
@@ -388,18 +484,84 @@ skills/
 
 每个任务是一个 JSON 文件，有状态、前置依赖 (`blockedBy`)：
 
+- **模拟流程图**
+
 ```
 .tasks/
   task_1.json  {"id":1, "status":"completed"}
   task_2.json  {"id":2, "blockedBy":[1], "status":"pending"}
   task_3.json  {"id":3, "blockedBy":[1], "status":"pending"}
   task_4.json  {"id":4, "blockedBy":[2,3], "status":"pending"}
+  
+  
+任务图 (DAG):
+                 +----------+
+            +--> | task 2   | --+
+            |    | pending  |   |
++----------+     +----------+    +--> +----------+
+| task 1   |                          | task 4   |
+| completed| --> +----------+    +--> | blocked  |
++----------+     | task 3   | --+     +----------+
+                 | pending  |
+                 +----------+
+
+顺序:   task 1 必须先完成, 才能开始 2 和 3
+并行:   task 2 和 3 可以同时执行
+依赖:   task 4 要等 2 和 3 都完成
+状态:   pending -> in_progress -> completed
 ```
 
 **任务图随时回答三个问题**：
+
 - 什么可以做？—— pending + blockedBy 为空
 - 什么被卡住？—— 等待前置任务完成
 - 什么做完了？—— completed，自动解锁后续任务
+
+```python
+# 创建任务
+class TaskManager:
+    def __init__(self, tasks_dir: Path):
+        self.dir = tasks_dir
+        self.dir.mkdir(exist_ok=True)
+        self._next_id = self._max_id() + 1
+
+    def create(self, subject, description=""):
+        task = {"id": self._next_id, "subject": subject,
+                "status": "pending", "blockedBy": [],
+                "owner": ""}
+        self._save(task)
+        self._next_id += 1
+        return json.dumps(task, indent=2)
+
+def _clear_dependency(self, completed_id):
+    for f in self.dir.glob("task_*.json"):
+        task = json.loads(f.read_text())
+        if completed_id in task.get("blockedBy", []):
+            task["blockedBy"].remove(completed_id)
+            self._save(task)
+
+# 更新任务状态
+def update(self, task_id, status=None,
+           add_blocked_by=None, remove_blocked_by=None):
+    task = self._load(task_id)
+    if status:
+        task["status"] = status
+        if status == "completed":
+            self._clear_dependency(task_id)
+    if add_blocked_by:
+        task["blockedBy"] = list(set(task["blockedBy"] + add_blocked_by))
+    if remove_blocked_by:
+        task["blockedBy"] = [x for x in task["blockedBy"] if x not in remove_blocked_by]
+    self._save(task)
+
+TOOL_HANDLERS = {
+    # ...base tools...
+    "task_create": lambda **kw: TASKS.create(kw["subject"]),
+    "task_update": lambda **kw: TASKS.update(kw["task_id"], kw.get("status")),
+    "task_list":   lambda **kw: TASKS.list_all(),
+    "task_get":    lambda **kw: TASKS.get(kw["task_id"]),
+}
+```
 
 ---
 
@@ -407,12 +569,130 @@ skills/
 
 > *"慢操作丢后台，agent 继续想下一步"* — 后台线程跑命令，完成后注入通知
 
+- **模拟流程图**
+
+```
+Main thread                Background thread
++-----------------+        +-----------------+
+| agent loop      |        | subprocess runs |
+| ...             |        | ...             |
+| [LLM call]  <---+------- | enqueue(result) |
+|  ^drain queue   |        +-----------------+
++-----------------+
+
+Timeline:
+Agent --[spawn A]--[spawn B]--[other work]----
+             |          |
+             v          v
+          [A runs]   [B runs]      (parallel)
+             |          |
+             +-- results injected before next LLM call --+
+```
+
 **核心机制**：
+
 - `BackgroundManager` 用线程安全的通知队列追踪任务
 - 子进程完成后，结果进入通知队列
 - 每次 LLM 调用前排空通知队列
 
 **解决的问题**：`npm install`、`pytest`、`docker build` 等慢命令阻塞式循环下模型只能干等。
+
+```python
+# -- BackgroundManager: threaded execution + notification queue --
+class BackgroundManager:
+    def __init__(self):
+        self.tasks = {}  # task_id -> {status, result, command}
+        self._notification_queue = []  # completed task results
+        self._lock = threading.Lock()
+
+    def run(self, command: str) -> str:
+        """Start a background thread, return task_id immediately."""
+        task_id = str(uuid.uuid4())[:8]
+        self.tasks[task_id] = {"status": "running", "result": None, "command": command}
+        thread = threading.Thread(
+            target=self._execute, args=(task_id, command), daemon=True
+        )
+        thread.start()
+        return f"Background task {task_id} started: {command[:80]}"
+
+    def _execute(self, task_id: str, command: str):
+        """Thread target: run subprocess, capture output, push to queue."""
+        try:
+            r = subprocess.run(
+                command, shell=True, cwd=WORKDIR,
+                capture_output=True, text=True, timeout=300
+            )
+            output = (r.stdout + r.stderr).strip()[:50000]
+            status = "completed"
+        except subprocess.TimeoutExpired:
+            output = "Error: Timeout (300s)"
+            status = "timeout"
+        except Exception as e:
+            output = f"Error: {e}"
+            status = "error"
+        self.tasks[task_id]["status"] = status
+        self.tasks[task_id]["result"] = output or "(no output)"
+        with self._lock:
+            self._notification_queue.append({
+                "task_id": task_id,
+                "status": status,
+                "command": command[:80],
+                "result": (output or "(no output)")[:500],
+            })
+
+    def check(self, task_id: str = None) -> str:
+        """Check status of one task or list all."""
+        if task_id:
+            t = self.tasks.get(task_id)
+            if not t:
+                return f"Error: Unknown task {task_id}"
+            return f"[{t['status']}] {t['command'][:60]}\n{t.get('result') or '(running)'}"
+        lines = []
+        for tid, t in self.tasks.items():
+            lines.append(f"{tid}: [{t['status']}] {t['command'][:60]}")
+        return "\n".join(lines) if lines else "No background tasks."
+
+    def drain_notifications(self) -> list:
+        """Return and clear all pending completion notifications."""
+        with self._lock:
+            notifs = list(self._notification_queue)
+            self._notification_queue.clear()
+        return notifs
+
+TOOL_HANDLERS = {
+    "background_run":   lambda **kw: BG.run(kw["command"]),
+    "check_background": lambda **kw: BG.check(kw.get("task_id")),
+}
+    
+def agent_loop(messages: list):
+    while True:
+        # Drain background notifications and inject as system message before LLM call
+        notifs = BG.drain_notifications()
+        if notifs and messages:
+            notif_text = "\n".join(
+                f"[bg:{n['task_id']}] {n['status']}: {n['result']}" for n in notifs
+            )
+            messages.append({"role": "user", "content": f"<background-results>\n{notif_text}\n</background-results>"})
+        response = client.messages.create(
+            model=MODEL, system=SYSTEM, messages=messages,
+            tools=TOOLS, max_tokens=8000,
+        )
+        messages.append({"role": "assistant", "content": response.content})
+        if response.stop_reason != "tool_use":
+            return
+        results = []
+        for block in response.content:
+            if block.type == "tool_use":
+                handler = TOOL_HANDLERS.get(block.name)
+                try:
+                    output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
+                except Exception as e:
+                    output = f"Error: {e}"
+                print(f"> {block.name}:")
+                print(str(output)[:200])
+                results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
+        messages.append({"role": "user", "content": results})
+```
 
 ---
 
@@ -423,6 +703,7 @@ skills/
 > *"任务太大一个人干不完，要能分给队友"* — 持久化队友 + JSONL 邮箱
 
 **三大要素**：
+
 1. 能跨多轮对话存活的持久 Agent
 2. 身份和生命周期管理
 3. Agent 之间的通信通道
@@ -495,42 +776,6 @@ task_1.json                     auth-refactor/
 
 ## 三、代码实现结构
 
-### 3.1 文件对应关系
-
-| 文档 | 代码文件 | 核心组件 |
-|------|----------|----------|
-| s01 | `s01_agent_loop.py` | agent_loop, run_bash |
-| s02 | `s02_tool_use.py` | TOOL_HANDLERS, safe_path |
-| s03 | `s03_todo_write.py` | TodoManager |
-| s04 | `s04_subagent.py` | run_subagent |
-| s05 | `s05_skill_loading.py` | SkillLoader |
-| s06 | `s06_context_compact.py` | microcompact, auto_compact |
-| s07 | `s07_task_system.py` | TaskManager |
-| s08 | `s08_background_tasks.py` | BackgroundManager |
-| s09 | `s09_agent_teams.py` | TeammateManager, MessageBus |
-| s10 | `s10_team_protocols.py` | shutdown_requests, plan_requests |
-| s11 | `s11_autonomous_agents.py` | idle_poll, scan_unclaimed_tasks |
-| s12 | `s12_worktree_task_isolation.py` | WorktreeManager, EventBus |
-| 总纲 | `s_full.py` | 全部机制合一 |
-
-### 3.2 s_full.py 总纲架构
-
-`_full.py` 是全部机制的完整参考实现，包含：
-
-- **24 个工具**：bash, read_file, write_file, edit_file, TodoWrite, task, load_skill, compress, background_run, check_background, task_create, task_get, task_update, task_list, spawn_teammate, list_teammates, send_message, read_inbox, broadcast, shutdown_request, plan_approval, idle, claim_task
-
-- **REPL 命令**：`/compact`, `/tasks`, `/team`, `/inbox`
-
-- **执行流程**：
-  1. microcompact（每轮）
-  2. auto_compact（超阈值）
-  3. drain background notifications
-  4. check inbox
-  5. LLM call
-  6. tool execution
-  7. nag reminder
-  8. manual compress（可选）
-
 ---
 
 ## 四、学习路径图
@@ -568,58 +813,3 @@ s08  Background Tasks        [6]     s10  Team Protocols          [12]
 ```
 
 ---
-
-## 五、关键设计原则
-
-### 5.1 Harness 工程师职责
-
-1. **实现工具**：给 agent 一双手，设计时原子化、可组合、描述清晰
-2. **策划知识**：给 agent 领域专长，按需加载，不要前置塞入
-3. **管理上下文**：给 agent 干净的记忆，子 agent 隔离，上下文压缩
-4. **控制权限**：给 agent 边界，沙箱化文件访问，对破坏性操作要求审批
-5. **收集任务过程数据**：Agent 执行的行动序列是训练信号
-
-### 5.2 核心格言速查
-
-| 课程 | 格言 |
-|------|------|
-| s01 | One loop & Bash is all you need |
-| s02 | 加一个工具，只加一个 handler |
-| s03 | 没有计划的 agent 走哪算哪 |
-| s04 | 大任务拆小，每个个小任务干净的上下文 |
-| s05 | 用到什么知识，临时加载什么知识 |
-| s06 | 上下文总会满，要有办法腾地方 |
-| s07 | 大目标要拆成小任务，排好序，记在磁盘上 |
-| s08 | 慢操作丢后台，agent 继续想下一步 |
-| s09 | 任务太大一个人干不完，要能分给队友 |
-| s10 | 队友之间要有统一的沟通规矩 |
-| s11 | 队友自己看看板，有活就认领 |
-| s12 | 各干各的目录，互不干扰 |
-
----
-
-## 六、姊妹教程
-
-- **learn-claude-code**：临时会话型 agent harness（循环、工具、规划、团队、worktree 隔离）
-- **claw0**：主动式常驻 harness（心跳、定时任务、IM 通道、记忆、Soul 人格）
-
----
-
-## 七、快速开始
-
-```sh
-git clone https://github.com/shareAI-lab/learn-claude-code
-cd learn-claude-code
-pip install -r requirements.txt
-cp .env.example .env   # 编辑 .env 填入你的 ANTHROPIC_API_KEY
-
-python agents/s01_agent_loop.py       # 从这里开始
-python agents/s12_worktree_task_isolation.py  # 完整递进终点
-python agents/s_full.py               # 总纲: 全部机制合一
-```
-
----
-
-**模型就是 Agent。代码是 Harness。造好 Harness，Agent 会完成剩下的。**
-
-**Bash is all you need. Real agents are all the universe needs.**
